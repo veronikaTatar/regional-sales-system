@@ -1,0 +1,28 @@
+CREATE TABLE roles (
+ id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ code VARCHAR(30) NOT NULL UNIQUE,
+ name VARCHAR(100) NOT NULL,
+ CONSTRAINT ck_role_code CHECK (code IN ('ADMIN','ANALYST','MANAGER','SALES_HEAD'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE app_users (
+ id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ role_id BIGINT NOT NULL,
+ login VARCHAR(60) NOT NULL UNIQUE,
+ email VARCHAR(254) NOT NULL UNIQUE,
+ password_hash VARCHAR(255) NULL,
+ full_name VARCHAR(150) NOT NULL,
+ active BOOLEAN NOT NULL DEFAULT TRUE,
+ created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+ CONSTRAINT fk_user_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+CREATE TABLE oauth_identities (
+ id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ provider VARCHAR(30) NOT NULL,
+ subject VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+ user_id BIGINT NOT NULL,
+ CONSTRAINT uk_oauth_provider_subject UNIQUE (provider,subject),
+ CONSTRAINT fk_oauth_user FOREIGN KEY (user_id) REFERENCES app_users(id) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+INSERT INTO roles(id,code,name) VALUES
+ (1,'ADMIN','Администратор'),(2,'ANALYST','Региональный аналитик'),
+ (3,'MANAGER','Менеджер по продажам'),(4,'SALES_HEAD','Руководитель отдела сбыта');

@@ -1,0 +1,69 @@
+package by.regsales.domain;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.Instant;
+
+@Entity
+@Table(name = "regional_plans", uniqueConstraints = @UniqueConstraint(name = "uk_plan_region_period", columnNames = {"region_id", "period_start", "period_end"}))
+@Getter
+@Setter
+@NoArgsConstructor
+public class RegionalPlan {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "region_id", nullable = false)
+    private Region region;
+
+    @Column(nullable = false)
+    private LocalDate periodStart;
+
+    @Column(nullable = false)
+    private LocalDate periodEnd;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private PlanStatus status = PlanStatus.DRAFT;
+
+    @Column(precision = 18, scale = 2)
+    private BigDecimal budgetLimit;
+
+    @Column(precision = 18, scale = 2)
+    private BigDecimal targetRevenue;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "purchasing_power_calculation_id")
+    private PurchasingPowerCalculation purchasingPowerCalculation;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "created_by_user_id", nullable = false)
+    private AppUser createdByUser;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "approved_by_user_id")
+    private AppUser approvedByUser;
+
+    private Instant approvedAt;
+
+    @Column(columnDefinition = "TEXT")
+    private String reviewComment;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt;
+
+    @Version
+    @Column(nullable = false)
+    private long version;
+
+    @PrePersist
+    void initializeTimestamp() {
+        if (createdAt == null) createdAt = Instant.now();
+    }
+}

@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:regsales;MODE=MySQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+app:
+  google:
+    client-id:
+    client-secret:
+  bootstrap-admin:
+    login:
+    email:
+    password:
