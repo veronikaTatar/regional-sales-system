@@ -1,36 +1,69 @@
 package by.regsales.auth;
-import by.regsales.common.ApiException;
-import by.regsales.domain.*;
-import by.regsales.repository.*;
+
+import by.regsales.security.AppPrincipal;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import jakarta.validation.Valid;
-import java.util.*;
-import static by.regsales.auth.AuthDtos.*;
-@RestController @RequestMapping("/api") @RequiredArgsConstructor @PreAuthorize("hasRole('ADMIN')")
+import java.util.List;
+
+import static by.regsales.auth.AuthDtos.UserView;
+import static by.regsales.auth.UserAdministrationDtos.*;
+
+@RestController
+@RequestMapping("/api")
+@RequiredArgsConstructor
+@PreAuthorize("hasRole('ADMIN')")
 public class UsersController {
-    private final AppUserRepository users;
-    private final RoleRepository roles;
-    @GetMapping("/users") @Transactional(readOnly=true) public List<UserView> list() { return users.findAll(org.springframework.data.domain.Sort.by("id")).stream().map(UserView::from).toList(); }
-    @GetMapping("/roles") public List<RoleView> roles() { return roles.findAll().stream().map(r->new RoleView(r.getCode(),r.getName())).toList(); }
-    @PatchMapping("/users/{id}") @Transactional public UserView patch(@PathVariable Long id,@Valid @RequestBody UserPatch patch,Authentication authentication) {
-        // Serialize changes to administrator membership across concurrent requests.
-        roles.lockByCode(RoleCode.ADMIN).orElseThrow();
-        var actor=users.findByLogin(authentication.getName()).orElseThrow();
-        if (!actor.isActive() || actor.getRole().getCode()!=RoleCode.ADMIN) throw new ApiException(HttpStatus.FORBIDDEN,"FORBIDDEN","Недостаточно прав для выполнения операции");
-        var user=users.findById(id).orElseThrow(()->new ApiException(HttpStatus.NOT_FOUND,"USER_NOT_FOUND","Пользователь не найден"));
-        if (patch.active()==null&&patch.role()==null) throw new ApiException(HttpStatus.BAD_REQUEST,"EMPTY_UPDATE","Укажите роль или состояние учётной записи");
-        if (user.getLogin().equals(authentication.getName()) && (Boolean.FALSE.equals(patch.active()) || patch.role()!=null && patch.role()!=RoleCode.ADMIN)) throw new ApiException(HttpStatus.CONFLICT,"SELF_LOCKOUT","Нельзя отключить или понизить собственную учётную запись");
-        if (user.isActive() && user.getRole().getCode()==RoleCode.ADMIN &&
-            (Boolean.FALSE.equals(patch.active()) || patch.role()!=null && patch.role()!=RoleCode.ADMIN) && users.countByRoleCodeAndActiveTrue(RoleCode.ADMIN)<=1) {
-            throw new ApiException(HttpStatus.CONFLICT,"LAST_ADMIN","Нельзя отключить последнего активного администратора");
-        }
-        if (patch.role()!=null) user.setRole(roles.findByCode(patch.role()).orElseThrow());
-        if (patch.active()!=null) user.setActive(patch.active());
-        return UserView.from(users.saveAndFlush(user));
+    private final UserAdministrationService administration;
+
+    @GetMapping("/users")
+    public List<UserListEntry> listUsers() {
+        return administration.listUsers();
+    }
+
+    @GetMapping("/roles")
+    public List<RoleView> listRoles() {
+        return administration.listRoles();
+    }
+
+    @PostMapping("/users")
+    @ResponseStatus(HttpStatus.CREATED)
+    public UserView createUser(@Valid @RequestBody UserCreate request, @AuthenticationPrincipal AppPrincipal actor) {
+        return administration.createUser(request, actor);
+    }
+
+    @PatchMapping("/users/{id}")
+    public UserView updateUser(@PathVariable Long id, @Valid @RequestBody UserPatch request,
+                               @AuthenticationPrincipal AppPrincipal actor) {
+        return administration.updateUser(id, request, actor);
+    }
+
+    @GetMapping("/users/{id}/region-assignments")
+    public List<RegionAssignmentView> listAssignments(@PathVariable Long id) {
+        return administration.listAssignments(id);
+    }
+
+    @PostMapping("/users/{id}/region-assignments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RegionAssignmentView createAssignment(@PathVariable Long id, @Valid @RequestBody RegionAssignmentRequest request,
+                                                  @AuthenticationPrincipal AppPrincipal actor) {
+        return administration.saveAssignment(id, null, request, actor);
+    }
+
+    @PutMapping("/users/{id}/region-assignments/{assignmentId}")
+    public RegionAssignmentView updateAssignment(@PathVariable Long id, @PathVariable Long assignmentId,
+                                                  @Valid @RequestBody RegionAssignmentRequest request,
+                                                  @AuthenticationPrincipal AppPrincipal actor) {
+        return administration.saveAssignment(id, assignmentId, request, actor);
+    }
+
+    @DeleteMapping("/users/{id}/region-assignments/{assignmentId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteAssignment(@PathVariable Long id, @PathVariable Long assignmentId,
+                                 @AuthenticationPrincipal AppPrincipal actor) {
+        administration.deleteAssignment(id, assignmentId, actor);
     }
 }

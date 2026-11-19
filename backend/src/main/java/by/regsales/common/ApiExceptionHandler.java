@@ -8,7 +8,7 @@ import org.springframework.security.access.AccessDeniedException;
 import java.util.LinkedHashMap;
 @RestControllerAdvice
 public class ApiExceptionHandler {
-    @ExceptionHandler(ApiException.class) ResponseEntity<ApiError> api(ApiException e) { return ResponseEntity.status(e.getStatus()).body(new ApiError(e.getCode(),e.getMessage())); }
+    @ExceptionHandler(ApiException.class) ResponseEntity<ApiError> api(ApiException e) { return ResponseEntity.status(e.getStatus()).body(new ApiError(e.getCode(),e.getMessage(),e.getFieldErrors())); }
     @ExceptionHandler(MethodArgumentNotValidException.class) ResponseEntity<ApiError> invalid(MethodArgumentNotValidException e) {
         var fields=new LinkedHashMap<String,String>();
         e.getBindingResult().getFieldErrors().forEach(f -> fields.putIfAbsent(f.getField(),f.getDefaultMessage()));

@@ -21,7 +21,7 @@ class MySqlSchemaIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test void migrationsAndReferenceDataArePresent() {
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1", Integer.class)).isEqualTo(3);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1", Integer.class)).isEqualTo(4);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM roles", Integer.class)).isEqualTo(4);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM regions", Integer.class)).isEqualTo(7);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE'", Integer.class)).isEqualTo(15);
@@ -39,6 +39,7 @@ class MySqlSchemaIntegrationTest {
 
     @Test void shipmentAmountIsGeneratedAndHistoryCannotBeDeleted() {
         long product = product(), user = user();
+        assertThat(jdbc.queryForObject("SELECT session_version FROM app_users WHERE id=?", Long.class, user)).isZero();
         long region = jdbc.queryForObject("SELECT MIN(id) FROM regions", Long.class);
         jdbc.update("INSERT INTO shipments(product_id,region_id,recorded_by_user_id,shipment_date,quantity,unit_price) VALUES(?,?,?,CURRENT_DATE,2.500,12.35)", product, region, user);
         long shipment = jdbc.queryForObject("SELECT LAST_INSERT_ID()",Long.class);

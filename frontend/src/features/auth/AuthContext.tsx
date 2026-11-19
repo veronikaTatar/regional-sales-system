@@ -8,6 +8,7 @@ interface AuthState {
   loading: boolean
   startupError: string | null
   refresh: () => Promise<void>
+  updateCurrentUser: (account: User) => void
   login: (login: string, password: string) => Promise<void>
   register: (data: RegisterRequest) => Promise<void>
   logout: () => Promise<void>
@@ -44,7 +45,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await api<void>('/auth/logout', { method: 'POST' })
     resetCsrf(); setUser(null)
   }
-  return <AuthContext.Provider value={{ user, loading, startupError, refresh, login, register, logout }}>{children}</AuthContext.Provider>
+  const updateCurrentUser = (account: User) => {
+    setUser(current => current?.id === account.id ? account : current)
+  }
+  return <AuthContext.Provider value={{ user, loading, startupError, refresh, updateCurrentUser, login, register, logout }}>{children}</AuthContext.Provider>
 }
 export function useAuth() {
   const value = useContext(AuthContext)

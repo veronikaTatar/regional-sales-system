@@ -4,12 +4,13 @@ import by.regsales.domain.Product;
 import by.regsales.domain.Region;
 import by.regsales.repository.AppUserRepository;
 import by.regsales.repository.ProductRepository;
+import by.regsales.security.AppPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,8 +31,8 @@ public class CatalogController {
 
     @GetMapping("/regions")
     @Operation(summary = "Доступные активные регионы")
-    public List<RegionResponse> regions(Authentication authentication) {
-        var user = users.findByLogin(authentication.getName())
+    public List<RegionResponse> regions(@AuthenticationPrincipal AppPrincipal principal) {
+        var user = users.findById(principal.getId())
                 .orElseThrow(() -> new AccessDeniedException("Учётная запись недоступна"));
         return regionScope.accessibleRegions(user).stream().map(RegionResponse::from).toList();
     }

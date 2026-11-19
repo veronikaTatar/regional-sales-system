@@ -49,6 +49,7 @@ public class SecurityConfig {
             .requestCache(c->c.disable())
             .authorizeHttpRequests(a->a
                 .requestMatchers("/api/auth/csrf","/api/auth/providers","/api/auth/login","/api/auth/register","/actuator/health","/error","/v3/api-docs/**","/swagger-ui/**","/swagger-ui.html","/oauth2/**","/login/oauth2/**").permitAll()
+                .requestMatchers("/api/users", "/api/users/**", "/api/roles").hasRole("ADMIN")
                 .anyRequest().authenticated())
             .exceptionHandling(e->e
                 .authenticationEntryPoint((request,response,error)->{response.setStatus(401);response.setContentType("application/json;charset=UTF-8");mapper.writeValue(response.getWriter(),new ApiError("UNAUTHORIZED","Войдите в систему"));})

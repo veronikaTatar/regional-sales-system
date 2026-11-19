@@ -11,5 +11,6 @@ public class AppUser {
     @Column(length = 255) private String passwordHash;
     @Column(nullable = false, length = 150) private String fullName;
     @Column(nullable = false) private boolean active = true;
+    @Column(nullable = false) private long sessionVersion;
     @Column(nullable = false, updatable = false) private Instant createdAt = Instant.now();
 }

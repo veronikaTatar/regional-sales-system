@@ -10,14 +10,17 @@ public class AppPrincipal implements UserDetails, OidcUser {
     private final Long id;
     private final String login,password;
     private final boolean active;
+    private final long sessionVersion;
     private final List<GrantedAuthority> authorities;
     private final OidcUser oidcUser;
     public AppPrincipal(AppUser u) { this(u,null); }
     public AppPrincipal(AppUser u,OidcUser oidcUser) {
         id=u.getId(); login=u.getLogin(); password=u.getPasswordHash()==null?"":u.getPasswordHash(); active=u.isActive();
+        sessionVersion=u.getSessionVersion();
         authorities=List.of(new SimpleGrantedAuthority("ROLE_"+u.getRole().getCode().name())); this.oidcUser=oidcUser;
     }
     public Long getId() { return id; }
+    public long getSessionVersion() { return sessionVersion; }
     public OidcUser getDelegate() { return oidcUser; }
     @Override public String getName() { return login; }
     @Override public String getUsername() { return login; }
