@@ -1,10 +1,15 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import { api, ApiError } from '../../api/client'
 import { AdminDialog } from '../administration/AdminDialog'
 import type { Shipment, ShipmentOptions } from './types'
 
 const belarusDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Minsk', dateStyle: 'short' })
+const quantityFormat = new Intl.NumberFormat('ru-BY', { useGrouping: false, maximumFractionDigits: 3 })
+const quantityPattern = /^\d{1,11}(\.\d{1,3})?$/
+const quantityStep = 5
+const maxQuantity = 99_999_999_999.999
 
 export function ShipmentEditor({ options, onClose, onSaved }: {
   options: ShipmentOptions
@@ -14,15 +19,31 @@ export function ShipmentEditor({ options, onClose, onSaved }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [fields, setFields] = useState<Record<string, string>>({})
+  const [quantity, setQuantity] = useState('')
+  const quantityId = useId()
   const activeProducts = options.products.filter(product => product.active)
+  const onlyRegion = options.regions.length === 1 ? options.regions[0] : null
+  const normalizedQuantity = quantity.trim().replace(',', '.')
+  const amount = quantityPattern.test(normalizedQuantity) ? Number(normalizedQuantity) : null
+  const stepBase = normalizedQuantity === '' ? 0 : amount
+  const increased = stepBase !== null && stepBase <= maxQuantity - quantityStep ? stepBase + quantityStep : null
+  const decreased = amount !== null && amount > quantityStep ? amount - quantityStep : null
+
+  function changeQuantity(value: string) {
+    setQuantity(value)
+    if (fields.quantity) setFields(previous => ({ ...previous, quantity: '' }))
+  }
+
+  function stepQuantity(value: number | null) {
+    if (value !== null) changeQuantity(quantityFormat.format(value))
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const quantity = String(form.get('quantity')).trim().replace(',', '.')
     const unitPrice = String(form.get('unitPrice')).trim().replace(',', '.')
     const issues: Record<string, string> = {}
-    if (!/^\d{1,11}(\.\d{1,3})?$/.test(quantity) || Number(quantity) <= 0) {
+    if (amount === null || amount <= 0) {
       issues.quantity = 'Введите количество больше нуля с точностью до трёх знаков'
     }
     if (!/^\d{1,12}(\.\d{1,2})?$/.test(unitPrice)) issues.unitPrice = 'Введите цену с точностью до копейки'
@@ -38,7 +59,7 @@ export function ShipmentEditor({ options, onClose, onSaved }: {
           shipmentDate: form.get('shipmentDate'),
           regionId: Number(form.get('regionId')),
           productId: Number(form.get('productId')),
-          quantity,
+          quantity: normalizedQuantity,
           unitPrice,
           referenceNumber: form.get('referenceNumber'),
         }),
@@ -64,11 +85,15 @@ export function ShipmentEditor({ options, onClose, onSaved }: {
           </label>
           <label className="admin-field">
             Регион
-            <select name="regionId" defaultValue={options.regions.length === 1 ? options.regions[0].id : ''}
-              required aria-invalid={Boolean(fields.regionId)}>
-              <option value="" disabled>Выберите регион</option>
-              {options.regions.map(region => <option key={region.id} value={region.id}>{region.name}</option>)}
-            </select>
+            {onlyRegion ? <>
+              <input value={onlyRegion.name} readOnly aria-invalid={Boolean(fields.regionId)}/>
+              <input type="hidden" name="regionId" value={onlyRegion.id}/>
+            </> : (
+              <select name="regionId" defaultValue="" required aria-invalid={Boolean(fields.regionId)}>
+                <option value="" disabled>Выберите регион</option>
+                {options.regions.map(region => <option key={region.id} value={region.id}>{region.name}</option>)}
+              </select>
+            )}
             {fields.regionId && <small className="field-error">{fields.regionId}</small>}
           </label>
           <label className="admin-field admin-field-wide">
@@ -81,11 +106,31 @@ export function ShipmentEditor({ options, onClose, onSaved }: {
             </select>
             {fields.productId && <small className="field-error">{fields.productId}</small>}
           </label>
-          <label className="admin-field">
-            Количество
-            <input name="quantity" inputMode="decimal" maxLength={15} required aria-invalid={Boolean(fields.quantity)}/>
+          <div className="admin-field">
+            <label htmlFor={quantityId}>Количество</label>
+            <div className="shipment-quantity-control">
+              <input id={quantityId} name="quantity" inputMode="decimal" maxLength={15} required
+                value={quantity} aria-invalid={Boolean(fields.quantity)}
+                onChange={event => changeQuantity(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                    event.preventDefault()
+                    stepQuantity(event.key === 'ArrowUp' ? increased : decreased)
+                  }
+                }}/>
+              <div className="shipment-quantity-arrows">
+                <button type="button" aria-label="Увеличить количество на 5" title="Прибавить 5"
+                  disabled={increased === null} onClick={() => stepQuantity(increased)}>
+                  <ChevronUp size={14} aria-hidden="true"/>
+                </button>
+                <button type="button" aria-label="Уменьшить количество на 5" title="Вычесть 5"
+                  disabled={decreased === null} onClick={() => stepQuantity(decreased)}>
+                  <ChevronDown size={14} aria-hidden="true"/>
+                </button>
+              </div>
+            </div>
             {fields.quantity && <small className="field-error" role="alert">{fields.quantity}</small>}
-          </label>
+          </div>
           <label className="admin-field">
             Цена единицы без НДС, BYN
             <input name="unitPrice" inputMode="decimal" maxLength={15} required aria-invalid={Boolean(fields.unitPrice)}/>
