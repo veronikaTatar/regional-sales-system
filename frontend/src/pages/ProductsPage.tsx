@@ -1,8 +1,12 @@
-import { useState } from 'react'
-import { Download, FileUp, Package, Pencil, Plus, Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ArrowDown, ArrowDownUp, ArrowUp, Download, FileUp, History, Package, Pencil, Plus, Search } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api, apiBlob } from '../api/client'
 import { Loading } from '../components/Loading'
+import { priceHistoryPage } from '../components/navigation'
 import { useAuth } from '../features/auth/AuthContext'
+import { catalogSearchText, formatCatalogDate, formatPrice } from '../features/products/catalogFormat'
+import { CatalogPagination, defaultCatalogPageSize } from '../features/products/CatalogPagination'
 import { ProductEditor } from '../features/products/ProductEditor'
 import { ProductImportDialog } from '../features/products/ProductImportDialog'
 import type { ProductImportResult } from '../features/products/ProductImportDialog'
@@ -12,11 +16,29 @@ import { PageHeading } from './WorkspacePages'
 import '../features/products/products.css'
 
 interface ManagedCatalog { canManage: boolean; products: Product[] }
-type ProductDialog = { kind: 'edit'; product: Product | null } | { kind: 'import' }
+type ProductDialog = { kind: 'edit'; product: Product | null; categories: string[] } | { kind: 'import' }
 type StatusFilter = 'all' | 'active' | 'archived'
 
-const priceFormat = new Intl.NumberFormat('ru-BY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const dateFormat = new Intl.DateTimeFormat('ru-BY', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' })
+const sortColumns = [
+  { field: 'name', label: 'Продукция' },
+  { field: 'sku', label: 'Артикул' },
+  { field: 'category', label: 'Группа' },
+  { field: 'unit', label: 'Ед. изм.' },
+  { field: 'currentPrice', label: 'Цена, BYN' },
+  { field: 'active', label: 'Статус' },
+] as const
+type SortField = typeof sortColumns[number]['field']
+type SortOrder = { field: SortField; direction: 'ascending' | 'descending' }
+
+const emptyProducts: Product[] = []
+const groupPrefix = 'group:'
+const collator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' })
+
+function compareProducts(left: Product, right: Product, field: SortField) {
+  if (field === 'currentPrice') return left.currentPrice - right.currentPrice
+  if (field === 'active') return Number(right.active) - Number(left.active)
+  return collator.compare(left[field] ?? '', right[field] ?? '')
+}
 
 export function ProductsPage() {
   const { user } = useAuth()
@@ -25,8 +47,11 @@ export function ProductsPage() {
     manager ? '/products/manage' : '/products',
   )
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState('')
+  const [category, setCategory] = useState<string | null>('')
   const [status, setStatus] = useState<StatusFilter>('all')
+  const [sort, setSort] = useState<SortOrder>({ field: 'name', direction: 'ascending' })
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(defaultCatalogPageSize)
   const [dialog, setDialog] = useState<ProductDialog | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
@@ -34,15 +59,45 @@ export function ProductsPage() {
 
   const managed = manager && data && !Array.isArray(data) ? data : null
   const canManage = managed?.canManage === true
-  const products = Array.isArray(data) ? data : managed?.products ?? []
-  const categories = [...new Set(products.flatMap(product => product.category ? [product.category] : []))]
-    .sort((left, right) => left.localeCompare(right, 'ru'))
-  const search = query.trim().toLocaleLowerCase('ru')
-  const visible = products.filter(product =>
-    (!category || product.category === category) &&
-    (!canManage || status === 'all' || product.active === (status === 'active')) &&
-    [product.name, product.sku, product.category].some(value => value?.toLocaleLowerCase('ru').includes(search)),
-  )
+  const products = Array.isArray(data) ? data : managed?.products ?? emptyProducts
+  const categories = useMemo(() => {
+    const names = products.flatMap(product => product.category ? [product.category] : [])
+    return [...new Set(names)].sort(collator.compare)
+  }, [products])
+  const matching = useMemo(() => {
+    const terms = catalogSearchText(query).trim().split(/\s+/).filter(Boolean)
+    const direction = sort.direction === 'ascending' ? 1 : -1
+    return products.filter(product => {
+      if (category !== '' && (product.category || null) !== category) return false
+      if (canManage && status !== 'all' && product.active !== (status === 'active')) return false
+      if (terms.length === 0) return true
+      const text = catalogSearchText([product.name, product.sku, product.category, product.description].join(' '))
+      return terms.every(term => text.includes(term))
+    }).sort((left, right) => direction * compareProducts(left, right, sort.field) || left.id - right.id)
+  }, [products, query, category, canManage, status, sort])
+
+  const pageCount = Math.max(1, Math.ceil(matching.length / pageSize))
+  const currentPage = Math.min(page, pageCount)
+  // A catalog update can remove the last page for the current filters.
+  if (page !== currentPage) setPage(currentPage)
+  const start = (currentPage - 1) * pageSize
+  const visible = matching.slice(start, start + pageSize)
+  const hasFilters = query !== '' || category !== '' || (canManage && status !== 'all')
+
+  function changeSort(field: SortField) {
+    setSort(previous => ({
+      field,
+      direction: previous.field === field && previous.direction === 'ascending' ? 'descending' : 'ascending',
+    }))
+    setPage(1)
+  }
+
+  function clearFilters() {
+    setQuery('')
+    setCategory('')
+    setStatus('all')
+    setPage(1)
+  }
 
   function openDialog(value: ProductDialog) {
     setNotice('')
@@ -106,13 +161,20 @@ export function ProductsPage() {
     <PageHeading eyebrow="ПРОДАЖИ" title="Продукция" subtitle="Справочник товаров предприятия. Отпускные цены указаны в BYN без НДС.">
       {canManage && (
         <div className="product-page-actions">
+          <Link className="button button-secondary" to={priceHistoryPage.path}>
+            <History size={16} aria-hidden="true"/>История цен
+          </Link>
+          <Link className="button button-secondary" to={priceHistoryPage.path + '?dialog=import'}>
+            <FileUp size={16} aria-hidden="true"/>Импорт прайса
+          </Link>
           <button className="button button-secondary" type="button" disabled={busy} onClick={() => void exportCatalog()}>
             <Download size={16}/>Скачать Excel
           </button>
           <button className="button button-secondary" type="button" disabled={busy} onClick={() => openDialog({ kind: 'import' })}>
             <FileUp size={16}/>Импорт из Excel
           </button>
-          <button className="button button-primary" type="button" disabled={busy} onClick={() => openDialog({ kind: 'edit', product: null })}>
+          <button className="button button-primary" type="button" disabled={busy}
+            onClick={() => openDialog({ kind: 'edit', product: null, categories })}>
             <Plus size={17}/>Добавить товар
           </button>
         </div>
@@ -133,27 +195,40 @@ export function ProductsPage() {
     <section className="panel catalog-panel" aria-labelledby="products-heading" aria-busy={loading}>
       <div className="table-toolbar product-toolbar">
         <h2 id="products-heading">Каталог продукции
-          {data && <span className="count-pill">{visible.length === products.length ? products.length : `${visible.length} из ${products.length}`}</span>}
+          {data && <span className="count-pill">
+            {matching.length === products.length ? products.length : `${matching.length} из ${products.length}`}
+          </span>}
         </h2>
         <div className="product-filters">
           <label className="search-input">
-            <Search size={17}/>
-            <input type="search" aria-label="Поиск продукции" placeholder="Название, артикул, группа"
-              value={query} onChange={event => setQuery(event.target.value)}/>
+            <Search size={17} aria-hidden="true"/>
+            <input type="search" aria-label="Поиск продукции" placeholder="Название, артикул, группа, характеристики"
+              value={query} onChange={event => { setQuery(event.target.value); setPage(1) }}/>
           </label>
-          {categories.length > 0 && (
-            <select aria-label="Фильтр по товарной группе" value={category} onChange={event => setCategory(event.target.value)}>
-              <option value="">Все группы</option>
-              {categories.map(group => <option key={group} value={group}>{group}</option>)}
+          {(categories.length > 0 || category !== '') && (
+            <select aria-label="Фильтр по товарной группе" value={category === null ? 'ungrouped' : groupPrefix + category}
+              onChange={event => {
+                const value = event.target.value
+                setCategory(value === 'ungrouped' ? null : value.slice(groupPrefix.length))
+                setPage(1)
+              }}>
+              <option value={groupPrefix}>Все группы</option>
+              {categories.map(group => <option key={group} value={groupPrefix + group}>{group}</option>)}
+              {category && !categories.includes(category) && <option value={groupPrefix + category}>{category}</option>}
+              {(category === null || products.some(product => !product.category)) && <option value="ungrouped">Без группы</option>}
             </select>
           )}
           {canManage && (
-            <select aria-label="Фильтр по статусу" value={status} onChange={event => setStatus(event.target.value as StatusFilter)}>
+            <select aria-label="Фильтр по статусу" value={status}
+              onChange={event => { setStatus(event.target.value as StatusFilter); setPage(1) }}>
               <option value="all">Все статусы</option>
               <option value="active">В продаже</option>
               <option value="archived">Снятые с продажи</option>
             </select>
           )}
+          {hasFilters && <button className="text-button product-clear-filters" type="button" onClick={clearFilters}>
+            Сбросить фильтры
+          </button>}
         </div>
       </div>
 
@@ -165,25 +240,24 @@ export function ProductsPage() {
           {canManage && <p>Добавьте товар вручную или загрузите книгу номенклатуры.</p>}
         </div>
       )}
-      {products.length > 0 && visible.length === 0 && (
-        <div className="table-no-results">
-          Товары по заданным фильтрам не найдены.
-          <button className="text-button" type="button" onClick={() => { setQuery(''); setCategory(''); setStatus('all') }}>
-            Сбросить фильтры
-          </button>
-        </div>
+      {products.length > 0 && matching.length === 0 && (
+        <div className="table-no-results" role="status">Товары по заданным фильтрам не найдены.</div>
       )}
       {visible.length > 0 && (
         <div className="table-scroll">
           <table className="product-table">
             <thead>
               <tr>
-                <th scope="col">Продукция</th>
-                <th scope="col">Артикул</th>
-                <th scope="col">Группа</th>
-                <th scope="col">Ед. изм.</th>
-                <th scope="col" className="numeric">Цена, BYN</th>
-                <th scope="col">Статус</th>
+                {sortColumns.map(({ field, label }) => {
+                  if (field === 'active' && !canManage) return <th key={field} scope="col">{label}</th>
+                  const direction = sort.field === field ? sort.direction : undefined
+                  const SortIcon = direction === 'ascending' ? ArrowUp : direction === 'descending' ? ArrowDown : ArrowDownUp
+                  return <th key={field} scope="col" className={field === 'currentPrice' ? 'numeric' : undefined} aria-sort={direction}>
+                    <button type="button" className="product-sort" onClick={() => changeSort(field)}>
+                      {label}<SortIcon size={13} aria-hidden="true"/>
+                    </button>
+                  </th>
+                })}
                 {canManage && <th scope="col" className="numeric">Действия</th>}
               </tr>
             </thead>
@@ -198,9 +272,9 @@ export function ProductsPage() {
                   <td>{product.category ?? '—'}</td>
                   <td>{product.unit}</td>
                   <td className="numeric product-price">
-                    {priceFormat.format(product.currentPrice)}
+                    {formatPrice(product.currentPrice)}
                     {product.priceAsOf && (
-                      <small className="cell-secondary">на {dateFormat.format(new Date(product.priceAsOf + 'T00:00:00Z'))}</small>
+                      <small className="cell-secondary">на {formatCatalogDate(product.priceAsOf)}</small>
                     )}
                   </td>
                   <td><span className={`mini-status ${product.active ? '' : 'inactive'}`}>
@@ -210,7 +284,7 @@ export function ProductsPage() {
                     <td>
                       <div className="admin-row-actions product-row-actions">
                         <button type="button" className="text-button" disabled={busy}
-                          aria-label={`Изменить ${product.sku}`} onClick={() => openDialog({ kind: 'edit', product })}>
+                          aria-label={`Изменить ${product.sku}`} onClick={() => openDialog({ kind: 'edit', product, categories })}>
                           <Pencil size={13}/>Изменить
                         </button>
                         <button type="button" className={`text-button ${product.active ? 'danger-text' : ''}`} disabled={busy}
@@ -226,13 +300,17 @@ export function ProductsPage() {
           </table>
         </div>
       )}
+      {visible.length > 0 && (
+        <CatalogPagination page={currentPage} pageSize={pageSize} total={matching.length} onPageChange={setPage}
+          onPageSizeChange={size => { setPageSize(size); setPage(1) }}/>
+      )}
     </section>
 
     {canManage && dialog?.kind === 'import' && (
       <ProductImportDialog onClose={() => setDialog(null)} onImported={onImported}/>
     )}
     {canManage && dialog?.kind === 'edit' && (
-      <ProductEditor product={dialog.product} onClose={() => setDialog(null)} onSaved={onSaved}/>
+      <ProductEditor product={dialog.product} categories={dialog.categories} onClose={() => setDialog(null)} onSaved={onSaved}/>
     )}
   </>
 }

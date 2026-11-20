@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { LogOut, Menu, X, ChevronRight, ShieldCheck } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Brand } from './Brand'
-import { pages } from './navigation'
+import { pages, priceHistoryPage } from './navigation'
 import { useAuth } from '../features/auth/AuthContext'
 export function Layout() {
   const { user, logout } = useAuth()
@@ -13,7 +13,9 @@ export function Layout() {
   if (!user) return null
   const visible = pages.filter(page => page.roles.includes(user.role))
   const groups = [...new Set(visible.map(page => page.group))]
-  const page = pages.find(item => item.path === location.pathname)
+  const page = location.pathname === priceHistoryPage.path
+    ? priceHistoryPage
+    : pages.find(item => item.path === location.pathname)
   const initials = user.fullName.trim().split(/\s+/).slice(0,2).map(word=>word[0]).join('').toUpperCase()
   async function signOut() {
     setBusy(true); setError('')

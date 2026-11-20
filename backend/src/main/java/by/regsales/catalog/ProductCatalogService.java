@@ -123,8 +123,8 @@ public class ProductCatalogService {
         return new ProductImportResult(resolved.size(), created, updated, resolved.size() - created - updated);
     }
 
-    private void lockWrites(AppPrincipal actor) {
-        // Serialize bulk upserts with single-product edits and status changes.
+    void lockWrites(AppPrincipal actor) {
+        // Keep price snapshots and imports consistent with catalog edits and status changes.
         roles.lockByCode(RoleCode.MANAGER).orElseThrow();
         requireManage(actor);
     }

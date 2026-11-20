@@ -6,21 +6,34 @@ import { AdminDialog } from '../administration/AdminDialog'
 
 interface Props {
   product: Product | null
+  categories: string[]
   onClose: () => void
   onSaved: (product: Product) => void
 }
 
-export function ProductEditor({ product, onClose, onSaved }: Props) {
+const categoryPrefix = 'group:'
+const newCategoryOption = 'new'
+
+export function ProductEditor({ product, categories, onClose, onSaved }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [fields, setFields] = useState<Record<string, string>>({})
+  const [categoryOption, setCategoryOption] = useState(categoryPrefix + (product?.category ?? ''))
+  const useNewCategory = categoryOption === newCategoryOption
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const currentPrice = String(form.get('currentPrice')).trim().replace(',', '.')
+    const category = useNewCategory
+      ? String(form.get('newCategory') ?? '').trim()
+      : categoryOption.slice(categoryPrefix.length)
     setError('')
     setFields({})
+    if (useNewCategory && !category) {
+      setFields({ category: 'Введите название товарной группы' })
+      return
+    }
     if (!/^\d{1,12}(\.\d{1,2})?$/.test(currentPrice)) {
       setFields({ currentPrice: 'Введите цену с точностью до двух знаков после запятой' })
       return
@@ -29,7 +42,7 @@ export function ProductEditor({ product, onClose, onSaved }: Props) {
     const input = {
       sku: form.get('sku'),
       name: form.get('name'),
-      category: form.get('category'),
+      category,
       unit: form.get('unit'),
       description: form.get('description'),
       currentPrice,
@@ -75,10 +88,23 @@ export function ProductEditor({ product, onClose, onSaved }: Props) {
           </label>
           <label className="admin-field admin-field-wide">
             Товарная группа
-            <input name="category" defaultValue={product?.category ?? ''} maxLength={100}
-              aria-invalid={Boolean(fields.category)}/>
-            {fields.category && <small className="field-error">{fields.category}</small>}
+            <select value={categoryOption} onChange={event => {
+              setCategoryOption(event.target.value)
+              setFields(previous => ({ ...previous, category: '' }))
+            }}>
+              <option value={categoryPrefix}>Без группы</option>
+              {categories.map(group => <option key={group} value={categoryPrefix + group}>{group}</option>)}
+              <option value={newCategoryOption}>Ввести свою группу…</option>
+            </select>
           </label>
+          {useNewCategory && (
+            <label className="admin-field admin-field-wide">
+              Название новой группы
+              <input name="newCategory" maxLength={100} autoComplete="off" autoFocus required
+                aria-invalid={Boolean(fields.category)}/>
+              {fields.category && <small className="field-error" role="alert">{fields.category}</small>}
+            </label>
+          )}
           <label className="admin-field admin-field-wide">
             Характеристики
             <textarea name="description" className="product-description" rows={3} maxLength={500}

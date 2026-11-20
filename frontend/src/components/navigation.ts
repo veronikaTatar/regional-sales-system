@@ -1,8 +1,12 @@
-import { LayoutDashboard, Package, MapPinned, Truck, Database, Calculator, ChartNoAxesCombined, Lightbulb, ClipboardList, BadgeCheck, FileChartColumnIncreasing, UsersRound, UserRound } from 'lucide-react'
+import { LayoutDashboard, Package, MapPinned, Truck, Database, Calculator, ChartNoAxesCombined, Lightbulb, ClipboardList, BadgeCheck, FileChartColumnIncreasing, UsersRound, UserRound, History } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { Role } from '../types'
 export interface PageDefinition { path: string; title: string; subtitle: string; icon: LucideIcon; group: string; roles: Role[]; capabilities?: string[] }
 const all: Role[] = ['ADMIN', 'ANALYST', 'MANAGER', 'SALES_HEAD']
+export const priceHistoryPage: PageDefinition = {
+  path: '/products/price-history', title: 'История цен', subtitle: 'Цены товаров по периодам действия',
+  icon: History, group: 'ПРОДАЖИ', roles: ['MANAGER'],
+}
 export const pages: PageDefinition[] = [
   { path: '/', title: 'Главная панель', subtitle: 'Ваше рабочее пространство', icon: LayoutDashboard, group: 'ОБЗОР', roles: all },
   { path: '/products', title: 'Продукция', subtitle: 'Каталог продукции предприятия', icon: Package, group: 'ПРОДАЖИ', roles: ['MANAGER','ANALYST','SALES_HEAD'] },

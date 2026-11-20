@@ -5,10 +5,29 @@ import { AdminDialog } from '../administration/AdminDialog'
 
 export interface ProductImportResult { total: number; created: number; updated: number; unchanged: number }
 
-export function ProductImportDialog({ onClose, onImported }: {
+const importOptions = {
+  catalog: {
+    endpoint: '/products/import',
+    title: 'Импорт товаров из Excel',
+    submit: 'Загрузить товары',
+    failure: 'Не удалось импортировать товары.',
+    hint: 'Загрузите книгу номенклатуры с листом «Товары». Новые артикулы будут добавлены, существующие обновятся.',
+  },
+  prices: {
+    endpoint: '/products/price-history/import',
+    title: 'Импорт прайса из Excel',
+    submit: 'Загрузить прайс',
+    failure: 'Не удалось импортировать прайс.',
+    hint: 'Загрузите квартальный прайс с листом «Прайс». Товары связываются по артикулу. Записи с теми же датами действия обновятся.',
+  },
+}
+
+export function ProductImportDialog({ kind = 'catalog', onClose, onImported }: {
+  kind?: keyof typeof importOptions
   onClose: () => void
   onImported: (result: ProductImportResult) => void
 }) {
+  const options = importOptions[kind]
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [issues, setIssues] = useState<Record<string, string>>({})
@@ -34,9 +53,9 @@ export function ProductImportDialog({ onClose, onImported }: {
 
     setBusy(true)
     try {
-      onImported(await api<ProductImportResult>('/products/import', { method: 'POST', body: form }))
+      onImported(await api<ProductImportResult>(options.endpoint, { method: 'POST', body: form }))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не удалось импортировать товары.')
+      setError(cause instanceof Error ? cause.message : options.failure)
       if (cause instanceof ApiError) setIssues(cause.fieldErrors)
     } finally {
       setBusy(false)
@@ -45,7 +64,7 @@ export function ProductImportDialog({ onClose, onImported }: {
 
   const errors = Object.entries(issues).sort(([left], [right]) => left.localeCompare(right, 'ru', { numeric: true }))
   return (
-    <AdminDialog title="Импорт товаров из Excel" busy={busy} onClose={onClose}>
+    <AdminDialog title={options.title} busy={busy} onClose={onClose}>
       <form className="admin-form" onSubmit={event => void upload(event)}>
         {error && (
           <div className="alert alert-error" role="alert">
@@ -63,13 +82,12 @@ export function ProductImportDialog({ onClose, onImported }: {
             onChange={clearErrors}/>
         </label>
         <p className="product-import-note">
-          Загрузите книгу номенклатуры с листом «Товары». Новые артикулы будут добавлены, существующие обновятся.
-          Весь файл проверяется перед записью в каталог. Формат XLSX, до 1 МБ.
+          {options.hint} Формат XLSX, до 1 МБ.
         </p>
         <footer className="admin-dialog-actions">
           <button type="button" className="button button-secondary" onClick={onClose} disabled={busy}>Отмена</button>
           <button type="submit" className="button button-primary" disabled={busy}>
-            {busy ? 'Проверяем файл…' : 'Загрузить товары'}
+            {busy ? 'Проверяем файл…' : options.submit}
           </button>
         </footer>
       </form>

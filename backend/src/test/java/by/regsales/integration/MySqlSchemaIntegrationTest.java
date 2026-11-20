@@ -21,10 +21,10 @@ class MySqlSchemaIntegrationTest {
     @Autowired JdbcTemplate jdbc;
 
     @Test void migrationsAndReferenceDataArePresent() {
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1", Integer.class)).isEqualTo(5);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1", Integer.class)).isEqualTo(6);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM roles", Integer.class)).isEqualTo(4);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM regions", Integer.class)).isEqualTo(7);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE'", Integer.class)).isEqualTo(15);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE'", Integer.class)).isEqualTo(16);
     }
 
     private long product() {
@@ -47,6 +47,18 @@ class MySqlSchemaIntegrationTest {
         assertThatThrownBy(() -> jdbc.update("DELETE FROM products WHERE id=?",product)).isInstanceOf(DataIntegrityViolationException.class);
         assertCheck(() -> jdbc.update("INSERT INTO shipments(product_id,region_id,recorded_by_user_id,shipment_date,quantity,unit_price) VALUES(?,?,?,CURRENT_DATE,-1,12.35)",product,region,user), "ck_shipment_quantity");
         assertThatThrownBy(() -> jdbc.update("INSERT INTO shipments(product_id,region_id,recorded_by_user_id,shipment_date,quantity,unit_price) VALUES(-1,?,?,CURRENT_DATE,1,1)",region,user)).isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test void priceHistoryProtectsProductAndPeriod() {
+        long product = product();
+        String insert = "INSERT INTO product_price_history(product_id,valid_from,valid_to,unit_price) VALUES(?,?,?,?)";
+        jdbc.update(insert, product, "2024-01-01", "2024-03-31", new BigDecimal("4.21"));
+        assertThatThrownBy(() -> jdbc.update(insert, product, "2024-01-01", "2024-03-31", new BigDecimal("4.21")))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertCheck(() -> jdbc.update(insert, product, "2024-04-01", "2024-03-31", new BigDecimal("4.21")),
+                "ck_price_history_period");
+        assertThatThrownBy(() -> jdbc.update("DELETE FROM products WHERE id=?", product))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test void statisticsRejectDuplicatePeriodsAndNegativeValues() {

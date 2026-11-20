@@ -20,3 +20,15 @@ export interface Product {
   priceAsOf: string | null
   active: boolean
 }
+export interface ProductPrice {
+  id: number
+  sku: string
+  name: string
+  validFrom: string
+  validTo: string
+  unitPrice: number
+  vatRate: number | null
+  priceWithVat: number | null
+  retailPrice: number | null
+  priceListCode: string | null
+}

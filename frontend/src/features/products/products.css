@@ -15,13 +15,25 @@
   gap: 12px 20px;
 }
 
+.product-filters {
+  flex: 1 1 590px;
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
 .product-filters .search-input {
-  min-width: 220px;
+  min-width: min(270px, 100%);
   width: auto;
-  flex: 1;
+  flex: 0 1 270px;
+}
+
+.product-filters .search-input input {
+  min-width: 0;
+  font-size: 11px;
 }
 
 .product-filters select,
+.product-page-size select,
 .product-description {
   font: inherit;
   border: 1px solid #dfe7e9;
@@ -30,11 +42,17 @@
   color: #314e58;
 }
 
-.product-filters select {
+.product-filters select,
+.product-page-size select {
   min-height: 36px;
   max-width: 100%;
   padding: 6px 8px;
   font-size: 11px;
+}
+
+.product-clear-filters {
+  min-height: 36px;
+  padding-inline: 7px;
 }
 
 .product-description {
@@ -60,9 +78,39 @@
   min-width: 630px;
 }
 
-.product-table th,
 .product-table td {
   padding: 13px 15px;
+}
+
+.product-table th {
+  padding: 3px 15px;
+  font-size: 10px;
+}
+
+.price-history-table th {
+  padding-block: 13px;
+}
+
+.price-history-period {
+  white-space: nowrap;
+}
+
+.product-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0;
+  background: transparent;
+  border-radius: 4px;
+  color: #576e79;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.product-sort:hover,
+.product-table th[aria-sort] .product-sort {
+  color: var(--teal);
 }
 
 .product-name {
@@ -82,6 +130,35 @@
 
 .product-row-actions .text-button {
   min-height: 30px;
+}
+
+.product-pagination,
+.product-pagination-controls,
+.product-page-size,
+.product-page-navigation {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.product-pagination {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 12px 15px;
+  border-top: 1px solid #edf0f2;
+  color: #576e79;
+  font-size: 11px;
+}
+
+.product-pagination-controls {
+  flex-wrap: wrap;
+  gap: 9px 17px;
+}
+
+.product-page-navigation .button {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
 }
 
 .product-access-note {
@@ -126,7 +203,8 @@
     gap: 13px;
   }
 
-  .product-page-actions {
+  .product-page-actions,
+  .product-filters {
     justify-content: flex-start;
   }
 }

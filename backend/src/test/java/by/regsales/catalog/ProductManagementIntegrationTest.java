@@ -6,6 +6,7 @@ import by.regsales.domain.RegionAssignment;
 import by.regsales.domain.Role;
 import by.regsales.domain.RoleCode;
 import by.regsales.repository.AppUserRepository;
+import by.regsales.repository.ProductPriceRepository;
 import by.regsales.repository.ProductRepository;
 import by.regsales.repository.RegionAssignmentRepository;
 import by.regsales.repository.RegionRepository;
@@ -46,10 +47,14 @@ class ProductManagementIntegrationTest {
     private static final String XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final String[] HEADERS = {"Артикул", "Наименование", "Товарная группа", "Ед. изм.",
             "Характеристики", "Отпускная цена без НДС, BYN", "Цена на дату", "Активен"};
+    private static final String HISTORY = "/api/products/price-history";
+    private static final String[] PRICE_HEADERS = {"Код прайс-листа", "Действует с", "Действует по", "Артикул",
+            "Валюта", "Отпускная без НДС, BYN", "Ставка НДС, %", "Отпускная с НДС, BYN", "Розничный ориентир с НДС, BYN"};
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired ProductRepository products;
+    @Autowired ProductPriceRepository prices;
     @Autowired AppUserRepository users;
     @Autowired RoleRepository roles;
     @Autowired RegionRepository regions;
@@ -57,7 +62,101 @@ class ProductManagementIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        prices.deleteAllInBatch();
         products.deleteAllInBatch();
+    }
+
+    @Test
+    void savesActiveCatalogPricesOncePerQuarter() throws Exception {
+        var manager = account(RoleCode.MANAGER);
+        assignRegion(manager, null);
+        var actor = as(manager);
+        byte[] catalog = book(HEADERS, new Object[][]{
+                {"SP-001", "Розетка", "Розетки", "шт.", null, 4.21, null, true},
+                {"SP-002", "Выключатель", "Выключатели", "шт.", null, 6.31, null, false},
+        });
+        mvc.perform(multipart("/api/products/import").file(xlsx(catalog)).with(actor).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(2));
+        var firstQuarter = Map.of("year", 2024, "quarter", 1);
+        mvc.perform(write(post(HISTORY + "/snapshot").with(actor), firstQuarter))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1));
+
+        var product = products.findBySkuIgnoreCase("SP-001").orElseThrow();
+        mvc.perform(write(put("/api/products/" + product.getId()).with(actor), product("SP-001", "Розетка", "4.45")))
+                .andExpect(status().isOk());
+        mvc.perform(write(post(HISTORY + "/snapshot").with(actor), firstQuarter))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.unchanged").value(1));
+        mvc.perform(write(post(HISTORY + "/snapshot").with(actor), Map.of("year", 2024, "quarter", 2)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1));
+
+        mvc.perform(get(HISTORY).with(actor))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].validFrom").value("2024-04-01"))
+                .andExpect(jsonPath("$[0].validTo").value("2024-06-30"))
+                .andExpect(jsonPath("$[0].unitPrice").value(4.45))
+                .andExpect(jsonPath("$[1].validFrom").value("2024-01-01"))
+                .andExpect(jsonPath("$[1].unitPrice").value(4.21));
+    }
+
+    @Test
+    void importsPriceListWithAnExactPeriodCorrectionAndRejectsIntersectingRows() throws Exception {
+        var manager = account(RoleCode.MANAGER);
+        assignRegion(manager, null);
+        var actor = as(manager);
+        mvc.perform(write(post("/api/products").with(actor), product("SP-001", "Розетка", "9.10")))
+                .andExpect(status().isCreated());
+        var january = LocalDate.of(2024, 1, 1);
+        var march = LocalDate.of(2024, 3, 31);
+        byte[] original = book("Прайс", PRICE_HEADERS, new Object[][]{
+                {"PL-2024-Q1", january, march, "sp-001", "BYN", "4,21", 20, 5.05, 6.60}
+        });
+        mvc.perform(multipart(HISTORY + "/import").file(xlsx(original)).with(actor).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1));
+        mvc.perform(multipart(HISTORY + "/import").file(xlsx(original)).with(actor).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.unchanged").value(1));
+
+        byte[] correction = book("Прайс", PRICE_HEADERS, new Object[][]{
+                {"PL-2024-Q1", january, march, "SP-001", "BYN", 4.25, 20, 5.10, 6.65}
+        });
+        mvc.perform(multipart(HISTORY + "/import").file(xlsx(correction)).with(actor).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.updated").value(1));
+        byte[] overlap = book("Прайс", PRICE_HEADERS, new Object[][]{
+                {"PL-2024-Q3", "2024-07-01", "2024-09-30", "SP-001", "BYN", 4.50},
+                {"PL-2024-Q2", march, "2024-06-30", "SP-001", "BYN", 4.35}
+        });
+        mvc.perform(multipart(HISTORY + "/import").file(xlsx(overlap)).with(actor).with(csrf()))
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("PRICE_PERIOD_OVERLAP"))
+                .andExpect(jsonPath("$.fieldErrors['Строка 3']").exists());
+        byte[] unknown = book("Прайс", PRICE_HEADERS, new Object[][]{
+                {"PL-2024-Q2", "01.04.2024", "30.06.2024", "UNKNOWN", "BYN", 4.35}
+        });
+        mvc.perform(multipart(HISTORY + "/import").file(xlsx(unknown)).with(actor).with(csrf()))
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("PRICE_PRODUCT_NOT_FOUND"));
+
+        mvc.perform(get(HISTORY).with(actor))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].unitPrice").value(4.25))
+                .andExpect(jsonPath("$[0].vatRate").value(20.0))
+                .andExpect(jsonPath("$[0].priceWithVat").value(5.10))
+                .andExpect(jsonPath("$[0].retailPrice").value(6.65))
+                .andExpect(jsonPath("$[0].priceListCode").value("PL-2024-Q1"));
+        assertThat(products.findBySkuIgnoreCase("SP-001").orElseThrow().getCurrentPrice()).isEqualByComparingTo("9.10");
+    }
+
+    @Test
+    void restrictsPriceHistoryToManagersWithAnAssignment() throws Exception {
+        var analyst = as(account(RoleCode.ANALYST));
+        var manager = account(RoleCode.MANAGER);
+        mvc.perform(get(HISTORY)).andExpect(status().isUnauthorized());
+        mvc.perform(get(HISTORY).with(analyst)).andExpect(status().isForbidden());
+        mvc.perform(get(HISTORY).with(as(manager))).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("REGION_ASSIGNMENT_REQUIRED"));
+        mvc.perform(write(post(HISTORY + "/snapshot").with(as(manager)), Map.of("year", 2024, "quarter", 1)))
+                .andExpect(status().isForbidden());
+        assignRegion(manager, null);
+        mvc.perform(write(post(HISTORY + "/snapshot").with(as(manager)), Map.of("year", 2024, "quarter", 5)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.quarter").exists());
+        mvc.perform(get(HISTORY).with(as(manager))).andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test
@@ -228,9 +327,13 @@ class ProductManagementIntegrationTest {
     }
 
     private byte[] book(String[] headers, Object[][] values) throws Exception {
+        return book("Товары", headers, values);
+    }
+
+    private byte[] book(String sheetName, String[] headers, Object[][] values) throws Exception {
         try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
             workbook.createSheet("Комплекты");
-            var sheet = workbook.createSheet("Товары");
+            var sheet = workbook.createSheet(sheetName);
             var header = sheet.createRow(0);
             for (int i = 0; i < headers.length; i++) header.createCell(i).setCellValue(headers[i]);
             var dateStyle = workbook.createCellStyle();
