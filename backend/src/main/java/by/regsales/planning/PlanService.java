@@ -24,13 +24,17 @@ import by.regsales.repository.ProductRepository;
 import by.regsales.repository.RegionAssignmentRepository;
 import by.regsales.repository.RegionRepository;
 import by.regsales.repository.RegionalPlanRepository;
+import by.regsales.repository.RoleRepository;
 import by.regsales.repository.ShipmentRepository;
 import by.regsales.security.AppPrincipal;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -48,6 +52,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -60,7 +65,9 @@ public class PlanService {
     private static final ZoneId MINSK = ZoneId.of("Europe/Minsk");
     private static final BigDecimal ZERO_REVENUE = BigDecimal.ZERO.setScale(2);
     private static final Sales NO_SALES = new Sales(BigDecimal.ZERO, ZERO_REVENUE);
+    private static final Set<PlanStatus> SALES_WAITING_STATUSES = Set.of(PlanStatus.AWAITING_SALES_DATA, PlanStatus.SALES_REVISION);
     private final RegionalPlanRepository plans;
+    private final RoleRepository roles;
     private final PlanItemRepository items;
     private final AppUserRepository users;
     private final RegionRepository regions;
@@ -155,6 +162,7 @@ public class PlanService {
 
     @Transactional
     public Summary create(Input input, AppPrincipal actor) {
+        if (input.requestAnalysis()) lockSalesWrites();
         var head = requireRole(actor, RoleCode.SALES_HEAD);
         var plan = new RegionalPlan();
         plan.setCreatedByUser(head);
@@ -164,6 +172,7 @@ public class PlanService {
 
     @Transactional
     public Summary update(Long id, Input input, AppPrincipal actor) {
+        if (input.requestAnalysis()) lockSalesWrites();
         var plan = headPlanForUpdate(id, input.version(), actor);
         if (!canEditParameters(plan)) throw invalidStage("Параметры плана недоступны для редактирования");
         applyParameters(plan, input);
@@ -193,6 +202,7 @@ public class PlanService {
 
     @Transactional
     public Summary submitSales(Long id, Long version, AppPrincipal actor) {
+        lockSalesWrites();
         var plan = managerPlanForUpdate(id, version, actor);
         if (!awaitingSales(plan)) throw invalidStage("План должен ожидать сведения о продажах");
 
@@ -201,21 +211,50 @@ public class PlanService {
         return summary(plan);
     }
 
+    @EventListener(ApplicationReadyEvent.class)
+    @Transactional
+    public void resumeWaitingPlansOnStartup() {
+        if (roles.lockByCode(RoleCode.MANAGER).isEmpty()) return;
+        resumeWaitingPlans(regions.findAll().stream().map(Region::getId).toList());
+    }
+
+    // ShipmentService holds the same manager-role lock as the initial sales check.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void resumeWaitingPlans(Collection<Long> regionIds) {
+        if (regionIds.isEmpty()) return;
+        var now = Instant.now();
+        for (var plan : plans.findWaitingSalesForUpdate(SALES_WAITING_STATUSES, regionIds)) {
+            var reported = previousFacts(plan);
+            if (reported.shipmentCount() > 0) sendToAnalysis(plan, reported, now);
+        }
+    }
+
+    private void lockSalesWrites() {
+        // Serialize dispatch and rechecks with shipment inserts, including a plan created during an import.
+        roles.lockByCode(RoleCode.MANAGER).orElseThrow();
+    }
+
     private void checkSalesForAnalysis(RegionalPlan plan, Instant now) {
         var reported = previousFacts(plan);
-        if (reported.shipmentCount() == 0) {
-            plan.setStatus(PlanStatus.SALES_REVISION);
-            plan.setValidationNote("Добавьте или импортируйте отгрузки по региону за указанный отчётный период.");
-            plan.setSalesSubmittedAt(null);
-            plan.setSalesShipmentCount(null);
-            plan.setSalesRevenue(null);
-        } else {
-            plan.setStatus(PlanStatus.AWAITING_ANALYSIS);
-            plan.setSalesSubmittedAt(now);
-            plan.setSalesShipmentCount(reported.shipmentCount());
-            plan.setSalesRevenue(reported.period().revenue());
-            plan.setValidationNote(null);
+        if (reported.shipmentCount() > 0) {
+            sendToAnalysis(plan, reported, now);
+            return;
         }
+        plan.setStatus(PlanStatus.SALES_REVISION);
+        plan.setValidationNote("За отчётный период по этому региону отгрузок нет. Зарегистрируйте отгрузки или импортируйте их из Excel.");
+        plan.setSalesSubmittedAt(null);
+        plan.setSalesShipmentCount(null);
+        plan.setSalesRevenue(null);
+        plan.setPlanningCheck(null);
+        plan.setUpdatedAt(now);
+    }
+
+    private static void sendToAnalysis(RegionalPlan plan, Facts reported, Instant now) {
+        plan.setStatus(PlanStatus.AWAITING_ANALYSIS);
+        plan.setSalesSubmittedAt(now);
+        plan.setSalesShipmentCount(reported.shipmentCount());
+        plan.setSalesRevenue(reported.period().revenue());
+        plan.setValidationNote(null);
         plan.setPlanningCheck(null);
         plan.setUpdatedAt(now);
     }
@@ -528,10 +567,7 @@ public class PlanService {
     }
 
     private static boolean awaitingSales(RegionalPlan plan) {
-        return switch (plan.getStatus()) {
-            case AWAITING_SALES_DATA, SALES_REVISION -> true;
-            default -> false;
-        };
+        return SALES_WAITING_STATUSES.contains(plan.getStatus());
     }
 
     private static boolean canEditParameters(RegionalPlan plan) {

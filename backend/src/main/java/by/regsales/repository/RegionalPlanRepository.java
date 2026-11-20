@@ -30,6 +30,14 @@ public interface RegionalPlanRepository extends JpaRepository<RegionalPlan, Long
     boolean existsByRegionIdAndPeriodStartAndPeriodEndAndStatusNot(Long regionId, LocalDate from, LocalDate to, PlanStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select plan from RegionalPlan plan
+            where plan.status in :statuses and plan.region.id in :regionIds and plan.sentToManagerAt is not null
+            order by plan.id
+            """)
+    List<RegionalPlan> findWaitingSalesForUpdate(Collection<PlanStatus> statuses, Collection<Long> regionIds);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select plan from RegionalPlan plan where plan.id = :id")
     Optional<RegionalPlan> findForUpdate(Long id);
 }

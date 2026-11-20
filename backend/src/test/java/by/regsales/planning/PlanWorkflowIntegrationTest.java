@@ -125,13 +125,22 @@ class PlanWorkflowIntegrationTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_STAGE"));
         write(post(path + "/review"), head, Map.of("version", version(assigned), "decision", "APPROVE"))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_STAGE"));
-        var incomplete = read(submitSales(path, assigned, manager).andExpect(status().isOk())
+        submitSales(path, assigned, manager).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SALES_REVISION"))
-                .andExpect(jsonPath("$.validationNote", containsString("отгрузки"))));
+                .andExpect(jsonPath("$.validationNote", containsString("отгрузок нет")));
+        write(post("/api/shipments"), manager, Map.of("regionId", region.getId(), "productId", product.getId(),
+                "shipmentDate", "2026-04-01", "quantity", 10, "unitPrice", "4.10", "referenceNumber", "PLAN-OTHER-PERIOD"))
+                .andExpect(status().isCreated());
+        mvc.perform(get(path).with(manager)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.status").value("SALES_REVISION"));
         mvc.perform(get(PATH).param("attention", "true").with(analyst)).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
-        shipment(responsible, region, product, "2025-12-31", "3", "4.10");
-        var recorded = read(submitSales(path, incomplete, manager).andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("AWAITING_ANALYSIS")));
+        write(post("/api/shipments"), manager, Map.of("regionId", region.getId(), "productId", product.getId(),
+                "shipmentDate", "2025-12-31", "quantity", 3, "unitPrice", "4.10"))
+                .andExpect(status().isCreated());
+        var recorded = read(mvc.perform(get(path).with(manager)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.status").value("AWAITING_ANALYSIS"))
+                .andExpect(jsonPath("$.plan.validationNote").doesNotExist())
+                .andExpect(jsonPath("$.canSubmitSales").value(false))).get("plan");
         write(put(path + "/items"), manager, Map.of("version", version(recorded), "items", List.of()))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_STAGE"));
         mvc.perform(get(path).with(analyst)).andExpect(status().isOk())

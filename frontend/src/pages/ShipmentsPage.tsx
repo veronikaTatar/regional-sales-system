@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { FileUp, Plus, Search, Truck } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { Loading } from '../components/Loading'
 import { SortableTableHeader } from '../components/SortableTableHeader'
 import type { SortDirection } from '../components/SortableTableHeader'
@@ -43,7 +44,13 @@ function formatTotal(value: string) {
 export function ShipmentsPage() {
   const { user } = useAuth()
   const options = useResource<ShipmentOptions>('/shipments/options')
-  const [filters, setFilters] = useState(initialFilters)
+  const [query] = useSearchParams()
+  const [filters, setFilters] = useState(() => ({
+    ...initialFilters,
+    regionId: query.get('regionId') ?? '',
+    from: query.get('from') ?? '',
+    to: query.get('to') ?? '',
+  }))
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
   const [sort, setSort] = useState<{ field: SortField; direction: SortDirection }>({ field: 'DATE', direction: 'descending' })

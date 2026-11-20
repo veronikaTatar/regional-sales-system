@@ -19,7 +19,7 @@ const tasks = {
 }
 
 export function PlanAttention() {
-  const { data, error, refresh } = useResource<PlanSummary[]>('/plans?attention=true')
+  const { data, error, refresh } = useResource<PlanSummary[]>('/plans?attention=true', true)
   if (error) return <div className="alert alert-error" role="alert">
     Не удалось загрузить задания по планам.
     <button type="button" className="text-button" onClick={() => void refresh()}>Повторить</button>

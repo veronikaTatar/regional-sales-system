@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api/client'
 
-export function useResource<T>(path: string) {
+export function useResource<T>(path: string, refreshOnFocus = false) {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
   const [failure, setFailure] = useState<Error | null>(null)
@@ -27,6 +27,12 @@ export function useResource<T>(path: string) {
     void refresh()
     return () => { latestRequest.current++ }
   }, [refresh])
+
+  useEffect(() => {
+    if (!refreshOnFocus) return
+    window.addEventListener('focus', refresh)
+    return () => window.removeEventListener('focus', refresh)
+  }, [refresh, refreshOnFocus])
 
   return { data, loading, error: failure?.message ?? '', apiError: failure instanceof ApiError ? failure : null, refresh }
 }

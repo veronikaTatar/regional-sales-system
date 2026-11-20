@@ -8,6 +8,7 @@ import by.regsales.domain.Product;
 import by.regsales.domain.Region;
 import by.regsales.domain.RoleCode;
 import by.regsales.domain.Shipment;
+import by.regsales.planning.PlanService;
 import by.regsales.repository.AppUserRepository;
 import by.regsales.repository.ProductRepository;
 import by.regsales.repository.RegionRepository;
@@ -50,6 +51,7 @@ public class ShipmentService {
     private final RegionRepository regions;
     private final RegionScopeService regionScope;
     private final ProductRepository products;
+    private final PlanService plans;
 
     public Options options(AppPrincipal actor) {
         var user = account(actor);
@@ -102,7 +104,9 @@ public class ShipmentService {
         var region = regions.getReferenceById(input.regionId());
         var shipment = shipment(manager, region, product, input.shipmentDate(), input.quantity(),
                 input.unitPrice(), input.referenceNumber());
-        return Entry.from(shipments.saveAndFlush(shipment));
+        shipments.saveAndFlush(shipment);
+        plans.resumeWaitingPlans(List.of(input.regionId()));
+        return Entry.from(shipment);
     }
 
     @Transactional
@@ -149,6 +153,7 @@ public class ShipmentService {
         if (!errors.isEmpty()) throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "SHIPMENT_IMPORT_CONFLICT",
                 "Проверьте отмеченные строки отгрузок", errors);
         shipments.saveAllAndFlush(added);
+        plans.resumeWaitingPlans(added.stream().map(shipment -> shipment.getRegion().getId()).collect(Collectors.toSet()));
         return new ImportResult(rows.size(), added.size(), unchanged, skipped);
     }
 

@@ -19,7 +19,7 @@ const approvalDate = new Intl.DateTimeFormat('ru-BY', { timeZone: 'Europe/Minsk'
 export function PlanDetailPage() {
   const { id } = useParams()
   const { user } = useAuth()
-  const { data: detail, error, loading, refresh } = useResource<PlanDetail>('/plans/' + id)
+  const { data: detail, error, loading, refresh } = useResource<PlanDetail>('/plans/' + id, true)
   const [dialog, setDialog] = useState<'EDIT' | PlanDecision | null>(null)
   const [notice, setNotice] = useState('')
   const [failedCheck, setFailedCheck] = useState<PlanSummary | null>(null)
@@ -38,6 +38,12 @@ export function PlanDetailPage() {
   if (!detail || detail.plan.id !== Number(id)) return <Loading label="Загружаем план…"/>
   const plan = failedCheck?.id === detail.plan.id && failedCheck.version > detail.plan.version ? failedCheck : detail.plan
   const progress = formatGoalProgress(planCents(plan.plannedRevenue), plan.targetRevenue)
+  const waitingForSales = plan.status === 'SALES_REVISION' || plan.status === 'AWAITING_SALES_DATA'
+  const managerWaiting = user?.role === 'MANAGER' && (waitingForSales || plan.status === 'AWAITING_ANALYSIS')
+  const sales = detail.salesSubmission
+  const shipmentFilters = sales && new URLSearchParams({
+    regionId: String(plan.regionId), from: sales.period.from, to: sales.period.to,
+  })
 
   async function onSaved(saved: PlanSummary) {
     setDialog(null)
@@ -70,7 +76,7 @@ export function PlanDetailPage() {
       const updated = await api<PlanSummary>('/plans/' + plan.id + '/' + action + '?version=' + plan.version, { method: 'POST' })
       await onSaved(updated)
     } catch (cause) {
-      if (cause instanceof ApiError && cause.status === 409) {
+      if (cause instanceof ApiError && cause.code === 'PLAN_CHANGED') {
         setActionError('План изменился. Проверьте обновлённую карточку.')
         await refresh()
       } else {
@@ -85,6 +91,9 @@ export function PlanDetailPage() {
     <PageHeading eyebrow="РЕГИОНАЛЬНЫЙ ПЛАН" title={plan.regionName} subtitle={formatPeriod(plan.periodStart, plan.periodEnd)}>
       <div className="product-page-actions">
         {back}
+        {detail.canEditItems && <a href="#plan-items" className="button button-primary">
+          <Pencil size={16} aria-hidden="true"/>К позициям плана
+        </a>}
         {detail.canWithdraw && (
           <button type="button" className="button button-secondary" disabled={pendingAction !== null || loading} onClick={() => void applyAction('withdraw')}>
             <Undo2 size={16} aria-hidden="true"/>{pendingAction === 'withdraw' ? 'Отзываем…' : 'Отозвать на редактирование'}
@@ -133,20 +142,24 @@ export function PlanDetailPage() {
       </div>}
     </section>
 
-    {detail.salesSubmission && <section className="panel plan-parameters analysis-section" aria-label="Сведения о продажах">
+    {sales && <section className="panel plan-parameters analysis-section" aria-label="Сведения о продажах">
       <div className="plan-parameters-heading"><h2>Сведения о продажах</h2></div>
       <dl>
-        <div><dt>Отчётный период</dt><dd>{formatPeriod(detail.salesSubmission.period.from, detail.salesSubmission.period.to)}</dd></div>
-        <div><dt>Строк отгрузок</dt><dd>{detail.salesSubmission.shipmentCount.toLocaleString('ru-BY')}</dd></div>
-        <div><dt>Фактическая выручка</dt><dd>{formatPlanMoney(detail.salesSubmission.period.revenue)} BYN</dd></div>
-        {detail.salesSubmission.submittedAt && <div><dt>Дата проверки</dt>
-          <dd>{approvalDate.format(new Date(detail.salesSubmission.submittedAt))}</dd></div>}
+        <div><dt>Отчётный период</dt><dd>{formatPeriod(sales.period.from, sales.period.to)}</dd></div>
+        <div><dt>Строк отгрузок</dt><dd>{sales.shipmentCount.toLocaleString('ru-BY')}</dd></div>
+        <div><dt>Фактическая выручка</dt><dd>{formatPlanMoney(sales.period.revenue)} BYN</dd></div>
+        {sales.submittedAt && <div><dt>Дата проверки</dt>
+          <dd>{approvalDate.format(new Date(sales.submittedAt))}</dd></div>}
       </dl>
-      {detail.canSubmitSales && <div className="product-page-actions plan-sales-actions">
-        <Link to="/shipments" className="button button-secondary">Открыть отгрузки</Link>
-        <button type="button" className="button button-primary" disabled={pendingAction !== null || loading} onClick={() => void applyAction('sales')}>
-          <Send size={16} aria-hidden="true"/>{pendingAction === 'sales' ? 'Проверяем отгрузки…' : 'Предоставить данные о продажах'}
-        </button>
+      {waitingForSales && sales.shipmentCount === 0 && plan.validationNote && (
+        <div className="alert alert-error plan-validation-note" role="alert">{plan.validationNote}</div>
+      )}
+      {waitingForSales && sales.shipmentCount > 0 && <p className="plan-comment">Отгрузки найдены. Повторная проверка передаст задание на анализ.</p>}
+      {waitingForSales && shipmentFilters && <div className="product-page-actions plan-sales-actions">
+        <Link to={'/shipments?' + shipmentFilters} className="button button-secondary">Отгрузки за отчётный период</Link>
+        {detail.canSubmitSales && <button type="button" className="button button-primary" disabled={pendingAction !== null || loading} onClick={() => void applyAction('sales')}>
+          <Send size={16} aria-hidden="true"/>{pendingAction === 'sales' ? 'Проверяем отгрузки…' : 'Проверить отгрузки повторно'}
+        </button>}
       </div>}
     </section>}
 
@@ -168,17 +181,22 @@ export function PlanDetailPage() {
       <div className="plan-parameters-heading"><h2>Результат проверки проекта</h2></div>
       <p className="plan-comment">{detail.planningCheck}</p>
     </section>}
-    {plan.validationNote && <div className="alert alert-error plan-validation-note" role="alert">
-      <strong>{plan.status === 'SALES_REVISION' ? 'Результат проверки данных о продажах' : 'Ошибки проверки позиций'}</strong>
+    {plan.validationNote && !waitingForSales && <div className="alert alert-error plan-validation-note" role="alert">
+      <strong>Ошибки проверки позиций</strong>
       <p>{plan.validationNote}</p>
     </div>}
     {detail.canAnalyze && <PlanAnalysisForm key={plan.id + '-' + plan.version} plan={plan} onSaved={onSaved} onReload={refresh}/>}
-    {(detail.canEditItems || detail.items.length > 0) && <section className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
+    {(detail.canEditItems || detail.items.length > 0 || managerWaiting) && <section id="plan-items" className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
       {detail.canEditItems ? (
         <PlanItemsEditor key={plan.id + '-' + detail.plan.version} detail={{ ...detail, plan }} onSaved={onSaved} onReload={refresh}/>
       ) : <>
         <div className="plan-section-top"><h2>Позиции плана</h2></div>
-        <div className="table-scroll">
+        {managerWaiting && <p className="plan-empty-inline">
+          {waitingForSales
+            ? 'Позиции можно будет заполнить после проверки отгрузок и передачи рекомендации аналитиком.'
+            : 'Позиции можно будет заполнить после передачи рекомендации аналитиком.'}
+        </p>}
+        {detail.items.length > 0 && <div className="table-scroll">
             <table className="product-table plan-items-table">
               <thead><tr>
                 <th scope="col">Товар</th>
@@ -201,7 +219,7 @@ export function PlanDetailPage() {
                 </tr>)}
               </tbody>
             </table>
-        </div>
+        </div>}
       </>}
     </section>}
     {dialog === 'EDIT' && detail.canEditParameters && <PlanEditor detail={detail} onClose={() => setDialog(null)} onSaved={onSaved}/>}

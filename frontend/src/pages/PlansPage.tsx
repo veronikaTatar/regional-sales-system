@@ -12,7 +12,7 @@ import { PageHeading } from './WorkspacePages'
 
 export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'analysis' }) {
   const { user } = useAuth()
-  const plans = useResource<PlanSummary[]>(mode === 'plans' ? '/plans' : '/plans?attention=true')
+  const plans = useResource<PlanSummary[]>(mode === 'plans' ? '/plans' : '/plans?attention=true', true)
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [removal, setRemoval] = useState<{ plan: PlanSummary; action: 'cancel' | 'delete' } | null>(null)
@@ -82,6 +82,7 @@ export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'ana
           <div className="empty-state">
             <ClipboardList size={40} strokeWidth={1.3} aria-hidden="true"/>
             <h2>{heading.empty}</h2>
+            {mode === 'analysis' && <p>Задание появится здесь после проверки отгрузок по региональному плану.</p>}
             {mode === 'plans' && <p>{user?.role === 'MANAGER'
               ? 'Здесь появится задание по региональному плану.'
               : 'Задайте параметры планирования и передайте задание на анализ.'}</p>}
