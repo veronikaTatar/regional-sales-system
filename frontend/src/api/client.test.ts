@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, resetCsrf } from './client'
+import { api, apiBlob, ApiError, resetCsrf } from './client'
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {status,headers:{'Content-Type':'application/json'}})
 beforeEach(resetCsrf)
 afterEach(()=>vi.unstubAllGlobals())
@@ -29,5 +29,32 @@ describe('session API client',()=>{
     vi.stubGlobal('fetch',fetch)
     await expect(api('/example',{method:'POST'})).rejects.toBeInstanceOf(ApiError)
     expect(fetch).toHaveBeenCalledTimes(4)
+  })
+  it('lets the browser set the multipart boundary when uploading an Excel file', async () => {
+    const form = new FormData()
+    form.set('file', new File(['xlsx bytes'], 'nomenklatura.xlsx'))
+    const fetch = vi.fn(async (url: RequestInfo | URL, options?: RequestInit) => {
+      if (url === '/api/auth/csrf') return json({ token: 'valid', headerName: 'X-CSRF-TOKEN' })
+      expect(url).toBe('/api/products/import')
+      expect(options?.body).toBe(form)
+      expect(new Headers(options?.headers).get('X-CSRF-TOKEN')).toBe('valid')
+      expect(new Headers(options?.headers).has('Content-Type')).toBe(false)
+      return json({ created: 1 })
+    })
+    vi.stubGlobal('fetch', fetch)
+
+    expect(await api('/products/import', { method: 'POST', body: form })).toEqual({ created: 1 })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+  it('returns binary data for an Excel download', async () => {
+    const bytes = new Uint8Array([80, 75, 3, 4])
+    const contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    const fetch = vi.fn(async () => new Response(bytes, { headers: { 'Content-Type': contentType } }))
+    vi.stubGlobal('fetch', fetch)
+
+    const download = await apiBlob('/products/export')
+    expect(download.type).toBe(contentType)
+    expect(download.size).toBe(bytes.byteLength)
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

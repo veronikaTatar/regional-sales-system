@@ -9,4 +9,14 @@ export interface User {
 }
 export interface RegisterRequest { login: string; email: string; fullName: string; password: string }
 export interface Region { id: number; code: string; name: string; active: boolean }
-export interface Product { id: number; sku: string; name: string; category: string | null; unit: string; currentPrice: number; active: boolean }
+export interface Product {
+  id: number
+  sku: string
+  name: string
+  category: string | null
+  unit: string
+  description: string | null
+  currentPrice: number
+  priceAsOf: string | null
+  active: boolean
+}

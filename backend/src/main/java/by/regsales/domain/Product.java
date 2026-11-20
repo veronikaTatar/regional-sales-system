@@ -5,6 +5,7 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "products")
@@ -25,11 +26,16 @@ public class Product {
     @Column(length = 100)
     private String category;
 
+    @Column(length = 500)
+    private String description;
+
     @Column(nullable = false, length = 20)
     private String unit = "шт.";
 
     @Column(nullable = false, precision = 14, scale = 2)
     private BigDecimal currentPrice;
+
+    private LocalDate priceAsOf;
 
     @Column(nullable = false)
     private boolean active = true;
