@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Map;
 
 public final class PriceHistoryDtos {
     private PriceHistoryDtos() {}
@@ -27,7 +28,9 @@ public final class PriceHistoryDtos {
         }
     }
 
-    record PriceRow(int number, String sku, LocalDate validFrom, LocalDate validTo, PriceValues values) {}
+    record PriceRow(String source, String sku, LocalDate validFrom, LocalDate validTo, PriceValues values) {}
+
+    public record ReplacementPrompt(String code, String message, Map<String, String> fieldErrors, String replacementToken) {}
 
     public record PriceEntry(Long id, String sku, String name, LocalDate validFrom, LocalDate validTo,
                              BigDecimal unitPrice, BigDecimal vatRate, BigDecimal priceWithVat,

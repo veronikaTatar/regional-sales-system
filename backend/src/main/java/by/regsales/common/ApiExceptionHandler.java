@@ -19,7 +19,7 @@ public class ApiExceptionHandler {
     ResponseEntity<ApiError> malformed(Exception e) { return ResponseEntity.badRequest().body(new ApiError("INVALID_REQUEST","Некорректный формат запроса")); }
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     ResponseEntity<ApiError> uploadTooLarge() {
-        return ResponseEntity.status(413).body(new ApiError("FILE_TOO_LARGE", "Размер файла должен быть не более 1 МБ"));
+        return ResponseEntity.status(413).body(new ApiError("FILE_TOO_LARGE", "На файл допускается до 1 МБ, на загрузку до 25 МБ"));
     }
     @ExceptionHandler(DataIntegrityViolationException.class) ResponseEntity<ApiError> conflict(DataIntegrityViolationException e) { return ResponseEntity.status(409).body(new ApiError("CONFLICT","Запись с такими данными уже существует или нарушены ограничения БД")); }
     @ExceptionHandler(AccessDeniedException.class) ResponseEntity<ApiError> denied(AccessDeniedException e) { return ResponseEntity.status(403).body(new ApiError("FORBIDDEN","Недостаточно прав для выполнения операции")); }

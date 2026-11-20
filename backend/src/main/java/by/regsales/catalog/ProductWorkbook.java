@@ -1,6 +1,7 @@
 package by.regsales.catalog;
 
 import by.regsales.common.ApiException;
+import by.regsales.common.XlsxReader;
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.*;
@@ -19,7 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import static by.regsales.catalog.CatalogXlsx.*;
+import static by.regsales.common.XlsxReader.*;
 import static by.regsales.catalog.ProductDtos.*;
 
 @Component
@@ -74,22 +75,22 @@ public class ProductWorkbook {
             var reader = new RowReader<>(row, columns, formatter);
             var input = new ProductInput(reader.text(Column.SKU), reader.text(Column.NAME), reader.text(Column.CATEGORY),
                     reader.text(Column.UNIT), reader.text(Column.DESCRIPTION),
-                    reader.read(Column.PRICE, CatalogXlsx::price, "Введите цену числом в BYN"),
-                    reader.read(Column.PRICE_DATE, CatalogXlsx::date, "Введите дату в формате ДД.ММ.ГГГГ"));
+                    reader.read(Column.PRICE, XlsxReader::decimal, "Введите цену числом в BYN"),
+                    reader.read(Column.PRICE_DATE, XlsxReader::date, "Введите дату в формате ДД.ММ.ГГГГ"));
             var active = reader.read(Column.ACTIVE, ProductWorkbook::status, "Укажите Да, Нет, 1 или 0");
 
             for (var violation : validator.validate(input)) {
                 var field = violation.getPropertyPath().toString();
                 var column = Arrays.stream(Column.values()).filter(item -> item.field.equals(field)).findFirst().orElseThrow();
-                reader.errors.putIfAbsent(column, violation.getMessage());
+                reader.errors().putIfAbsent(column, violation.getMessage());
             }
-            if (!input.hasValidPriceDate()) reader.errors.put(Column.PRICE_DATE, "Укажите год от 1000 до 9999");
+            if (!input.hasValidPriceDate()) reader.errors().put(Column.PRICE_DATE, "Укажите год от 1000 до 9999");
             int rowNumber = row.getRowNum() + 1;
             if (input.sku() != null) {
                 var first = firstSkuRows.putIfAbsent(input.sku().toUpperCase(Locale.ROOT), rowNumber);
-                if (first != null) reader.errors.put(Column.SKU, "Этот артикул уже указан в строке " + first);
+                if (first != null) reader.errors().put(Column.SKU, "Этот артикул уже указан в строке " + first);
             }
-            reader.errors.forEach((column, message) -> errors.put("Строка " + rowNumber + " · " + column.header, message));
+            reader.errors().forEach((column, message) -> errors.put("Строка " + rowNumber + " · " + column.header, message));
             rows.add(new WorkbookRow(rowNumber, input, active));
             if (errors.size() >= MAX_ERRORS) break;
         }

@@ -45,7 +45,7 @@ public class CatalogController {
         return products.findAllByActiveTrueOrderByNameAsc().stream().map(ProductView::from).toList();
     }
 
-    @GetMapping("/products/{id}")
+    @GetMapping("/products/{id:[0-9]+}")
     @Operation(summary = "Карточка активного товара")
     public ProductView product(@PathVariable Long id) {
         return products.findByIdAndActiveTrue(id).map(ProductView::from).orElseThrow(() ->

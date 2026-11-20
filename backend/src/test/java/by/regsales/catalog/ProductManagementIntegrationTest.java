@@ -112,13 +112,17 @@ class ProductManagementIntegrationTest {
         });
         mvc.perform(multipart(HISTORY + "/import").file(xlsx(original)).with(actor).with(csrf()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1));
-        mvc.perform(multipart(HISTORY + "/import").file(xlsx(original)).with(actor).with(csrf()))
+        var repeatToken = replacementToken(multipart(HISTORY + "/import").file(xlsx(original)).with(actor).with(csrf()));
+        mvc.perform(multipart(HISTORY + "/import").file(xlsx(original)).param("replacementToken", repeatToken)
+                        .with(actor).with(csrf()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.unchanged").value(1));
 
         byte[] correction = book("Прайс", PRICE_HEADERS, new Object[][]{
                 {"PL-2024-Q1", january, march, "SP-001", "BYN", 4.25, 20, 5.10, 6.65}
         });
-        mvc.perform(multipart(HISTORY + "/import").file(xlsx(correction)).with(actor).with(csrf()))
+        var correctionToken = replacementToken(multipart(HISTORY + "/import").file(xlsx(correction)).with(actor).with(csrf()));
+        mvc.perform(multipart(HISTORY + "/import").file(xlsx(correction)).param("replacementToken", correctionToken)
+                        .with(actor).with(csrf()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.updated").value(1));
         byte[] overlap = book("Прайс", PRICE_HEADERS, new Object[][]{
                 {"PL-2024-Q3", "2024-07-01", "2024-09-30", "SP-001", "BYN", 4.50},
@@ -126,7 +130,7 @@ class ProductManagementIntegrationTest {
         });
         mvc.perform(multipart(HISTORY + "/import").file(xlsx(overlap)).with(actor).with(csrf()))
                 .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.code").value("PRICE_PERIOD_OVERLAP"))
-                .andExpect(jsonPath("$.fieldErrors['Строка 3']").exists());
+                .andExpect(jsonPath("$.fieldErrors['nomenklatura.xlsx · строка 3']").exists());
         byte[] unknown = book("Прайс", PRICE_HEADERS, new Object[][]{
                 {"PL-2024-Q2", "01.04.2024", "30.06.2024", "UNKNOWN", "BYN", 4.35}
         });
@@ -141,6 +145,42 @@ class ProductManagementIntegrationTest {
                 .andExpect(jsonPath("$[0].retailPrice").value(6.65))
                 .andExpect(jsonPath("$[0].priceListCode").value("PL-2024-Q1"));
         assertThat(products.findBySkuIgnoreCase("SP-001").orElseThrow().getCurrentPrice()).isEqualByComparingTo("9.10");
+    }
+
+    @Test
+    void importsPriceListsAsOneBatchAndRechecksReplacementAfterAnotherImport() throws Exception {
+        var manager = account(RoleCode.MANAGER);
+        assignRegion(manager, null);
+        var actor = as(manager);
+        mvc.perform(write(post("/api/products").with(actor), product("SP-001", "Розетка", "9.10")))
+                .andExpect(status().isCreated());
+        var first = priceFile("price_list_2024-Q1.xlsx", "2024-01-01", "2024-03-31", 4.21);
+        var second = priceFile("price_list_2024-Q2.xlsx", "2024-04-01", "2024-06-30", 4.45);
+        var third = priceFile("price_list_2024-Q3.xlsx", "2024-07-01", "2024-09-30", 4.55);
+        mvc.perform(multipart(HISTORY + "/import").file(first).file(second).with(actor).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(2));
+
+        var correction = priceFile("corrected.xlsx", "2024-01-01", "2024-03-31", 4.25);
+        var token = replacementToken(multipart(HISTORY + "/import").file(correction).file(third).with(actor).with(csrf()));
+        assertThat(prices.count()).isEqualTo(2);
+        mvc.perform(get(HISTORY).with(actor)).andExpect(jsonPath("$[1].unitPrice").value(4.21));
+
+        var intervening = priceFile("other-correction.xlsx", "2024-01-01", "2024-03-31", 4.30);
+        var otherToken = replacementToken(multipart(HISTORY + "/import").file(intervening).with(actor).with(csrf()));
+        mvc.perform(multipart(HISTORY + "/import").file(intervening).param("replacementToken", otherToken).with(actor).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.updated").value(1));
+        var refreshedToken = replacementToken(multipart(HISTORY + "/import").file(correction).file(third)
+                .param("replacementToken", token).with(actor).with(csrf()));
+        assertThat(refreshedToken).isNotEqualTo(token);
+        assertThat(prices.count()).isEqualTo(2);
+        mvc.perform(get(HISTORY).with(actor)).andExpect(jsonPath("$[1].unitPrice").value(4.30));
+
+        mvc.perform(multipart(HISTORY + "/import").file(correction).file(third)
+                        .param("replacementToken", refreshedToken).with(actor).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.created").value(1)).andExpect(jsonPath("$.updated").value(1));
+        mvc.perform(multipart(HISTORY + "/import").file(first).file(correction).with(actor).with(csrf()))
+                .andExpect(status().isUnprocessableEntity()).andExpect(jsonPath("$.fieldErrors['corrected.xlsx · строка 2']").exists());
+        assertThat(prices.count()).isEqualTo(3);
     }
 
     @Test
@@ -324,6 +364,18 @@ class ProductManagementIntegrationTest {
 
     private MockMultipartFile xlsx(byte[] contents) {
         return new MockMultipartFile("file", "nomenklatura.xlsx", XLSX, contents);
+    }
+
+    private MockMultipartFile priceFile(String filename, String from, String to, double price) throws Exception {
+        return new MockMultipartFile("files", filename, XLSX, book("Прайс", PRICE_HEADERS,
+                new Object[][]{{"PL", from, to, "SP-001", "BYN", price}}));
+    }
+
+    private String replacementToken(MockHttpServletRequestBuilder request) throws Exception {
+        var response = mvc.perform(request).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PRICE_PERIOD_EXISTS"))
+                .andExpect(jsonPath("$.replacementToken").isString()).andReturn();
+        return json.readTree(response.getResponse().getContentAsByteArray()).get("replacementToken").asText();
     }
 
     private byte[] book(String[] headers, Object[][] values) throws Exception {

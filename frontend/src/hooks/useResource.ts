@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api } from '../api/client'
+import { api, ApiError } from '../api/client'
 
 export function useResource<T>(path: string) {
   const [data, setData] = useState<T | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [failure, setFailure] = useState<Error | null>(null)
   const latestRequest = useRef(0)
 
   const refresh = useCallback(async () => {
     const request = ++latestRequest.current
     setLoading(true)
-    setError('')
+    setFailure(null)
     try {
       const result = await api<T>(path)
       if (request === latestRequest.current) setData(result)
     } catch (cause) {
       if (request === latestRequest.current) {
-        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить данные.')
+        setFailure(cause instanceof Error ? cause : new Error('Не удалось загрузить данные.'))
       }
     } finally {
       if (request === latestRequest.current) setLoading(false)
@@ -28,5 +28,5 @@ export function useResource<T>(path: string) {
     return () => { latestRequest.current++ }
   }, [refresh])
 
-  return { data, loading, error, refresh }
+  return { data, loading, error: failure?.message ?? '', apiError: failure instanceof ApiError ? failure : null, refresh }
 }

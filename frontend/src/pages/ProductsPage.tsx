@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, ArrowDownUp, ArrowUp, Download, FileUp, History, Package, Pencil, Plus, Search } from 'lucide-react'
+import { Download, FileUp, History, Package, Pencil, Plus, Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api, apiBlob } from '../api/client'
 import { Loading } from '../components/Loading'
+import { SortableTableHeader } from '../components/SortableTableHeader'
+import type { SortDirection } from '../components/SortableTableHeader'
 import { priceHistoryPage } from '../components/navigation'
 import { useAuth } from '../features/auth/AuthContext'
 import { catalogSearchText, formatCatalogDate, formatPrice } from '../features/products/catalogFormat'
@@ -28,7 +30,7 @@ const sortColumns = [
   { field: 'active', label: 'Статус' },
 ] as const
 type SortField = typeof sortColumns[number]['field']
-type SortOrder = { field: SortField; direction: 'ascending' | 'descending' }
+type SortOrder = { field: SortField; direction: SortDirection }
 
 const emptyProducts: Product[] = []
 const groupPrefix = 'group:'
@@ -164,14 +166,11 @@ export function ProductsPage() {
           <Link className="button button-secondary" to={priceHistoryPage.path}>
             <History size={16} aria-hidden="true"/>История цен
           </Link>
-          <Link className="button button-secondary" to={priceHistoryPage.path + '?dialog=import'}>
-            <FileUp size={16} aria-hidden="true"/>Импорт прайса
-          </Link>
           <button className="button button-secondary" type="button" disabled={busy} onClick={() => void exportCatalog()}>
-            <Download size={16}/>Скачать Excel
+            <Download size={16}/>Скачать каталог
           </button>
           <button className="button button-secondary" type="button" disabled={busy} onClick={() => openDialog({ kind: 'import' })}>
-            <FileUp size={16}/>Импорт из Excel
+            <FileUp size={16}/>Импорт каталога
           </button>
           <button className="button button-primary" type="button" disabled={busy}
             onClick={() => openDialog({ kind: 'edit', product: null, categories })}>
@@ -251,12 +250,8 @@ export function ProductsPage() {
                 {sortColumns.map(({ field, label }) => {
                   if (field === 'active' && !canManage) return <th key={field} scope="col">{label}</th>
                   const direction = sort.field === field ? sort.direction : undefined
-                  const SortIcon = direction === 'ascending' ? ArrowUp : direction === 'descending' ? ArrowDown : ArrowDownUp
-                  return <th key={field} scope="col" className={field === 'currentPrice' ? 'numeric' : undefined} aria-sort={direction}>
-                    <button type="button" className="product-sort" onClick={() => changeSort(field)}>
-                      {label}<SortIcon size={13} aria-hidden="true"/>
-                    </button>
-                  </th>
+                  return <SortableTableHeader key={field} label={label} direction={direction}
+                    numeric={field === 'currentPrice'} onSort={() => changeSort(field)}/>
                 })}
                 {canManage && <th scope="col" className="numeric">Действия</th>}
               </tr>

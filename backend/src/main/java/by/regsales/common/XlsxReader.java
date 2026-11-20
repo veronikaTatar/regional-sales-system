@@ -1,6 +1,5 @@
-package by.regsales.catalog;
+package by.regsales.common;
 
-import by.regsales.common.ApiException;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.http.HttpStatus;
@@ -20,21 +19,21 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-final class CatalogXlsx {
-    static final int MAX_ROWS = 5_000;
-    static final int MAX_ERRORS = 50;
+public final class XlsxReader {
+    public static final int MAX_ROWS = 5_000;
+    public static final int MAX_ERRORS = 50;
     private static final long MAX_BYTES = 1024 * 1024;
     private static final DateTimeFormatter RUSSIAN_DATE =
             DateTimeFormatter.ofPattern("dd.MM.uuuu").withResolverStyle(ResolverStyle.STRICT);
 
-    private CatalogXlsx() {}
+    private XlsxReader() {}
 
-    interface ColumnHeader {
+    public interface ColumnHeader {
         String header();
         boolean required();
     }
 
-    static <T> T readSheet(MultipartFile file, String sheetName, String missingFileMessage, Function<Sheet, T> parse) {
+    public static <T> T readSheet(MultipartFile file, String sheetName, String missingFileMessage, Function<Sheet, T> parse) {
         if (file == null || file.isEmpty()) throw invalid("FILE_REQUIRED", missingFileMessage);
         var filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
@@ -54,7 +53,7 @@ final class CatalogXlsx {
         }
     }
 
-    static <C extends Enum<C> & ColumnHeader> Map<C, Integer> readHeader(Row header, Class<C> type, DataFormatter formatter) {
+    public static <C extends Enum<C> & ColumnHeader> Map<C, Integer> readHeader(Row header, Class<C> type, DataFormatter formatter) {
         var columns = new EnumMap<C, Integer>(type);
         var expected = type.getEnumConstants();
         if (header != null) {
@@ -75,7 +74,7 @@ final class CatalogXlsx {
         return columns;
     }
 
-    static boolean skipRow(Row row, Map<?, Integer> columns) {
+    public static boolean skipRow(Row row, Map<?, Integer> columns) {
         return row.getRowNum() == 0 || columns.values().stream().allMatch(index -> blank(row.getCell(index)));
     }
 
@@ -84,7 +83,7 @@ final class CatalogXlsx {
                 || (cell.getCellType() == CellType.STRING && cell.getStringCellValue().isBlank());
     }
 
-    static BigDecimal price(Cell cell) {
+    public static BigDecimal decimal(Cell cell) {
         if (cell.getCellType() == CellType.NUMERIC && !DateUtil.isCellDateFormatted(cell)) {
             return BigDecimal.valueOf(cell.getNumericCellValue());
         }
@@ -97,7 +96,7 @@ final class CatalogXlsx {
         throw new IllegalArgumentException();
     }
 
-    static LocalDate date(Cell cell) {
+    public static LocalDate date(Cell cell) {
         if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
             return cell.getLocalDateTimeCellValue().toLocalDate();
         }
@@ -108,23 +107,27 @@ final class CatalogXlsx {
         throw new IllegalArgumentException();
     }
 
-    static ApiException invalid(String code, String message) {
+    public static ApiException invalid(String code, String message) {
         return new ApiException(HttpStatus.BAD_REQUEST, code, message);
     }
 
-    static final class RowReader<C extends ColumnHeader> {
+    public static final class RowReader<C extends ColumnHeader> {
         private final Row row;
         private final Map<C, Integer> columns;
         private final DataFormatter formatter;
-        final Map<C, String> errors = new LinkedHashMap<>();
+        private final Map<C, String> errors = new LinkedHashMap<>();
 
-        RowReader(Row row, Map<C, Integer> columns, DataFormatter formatter) {
+        public RowReader(Row row, Map<C, Integer> columns, DataFormatter formatter) {
             this.row = row;
             this.columns = columns;
             this.formatter = formatter;
         }
 
-        String text(C column) {
+        public Map<C, String> errors() {
+            return errors;
+        }
+
+        public String text(C column) {
             return read(column, cell -> {
                 if (cell.getCellType() != CellType.STRING && cell.getCellType() != CellType.NUMERIC) {
                     throw new IllegalArgumentException();
@@ -133,7 +136,7 @@ final class CatalogXlsx {
             }, "Введите текстовое значение");
         }
 
-        <T> T read(C column, Function<Cell, T> convert, String invalidValue) {
+        public <T> T read(C column, Function<Cell, T> convert, String invalidValue) {
             var index = columns.get(column);
             var cell = index == null ? null : row.getCell(index);
             if (blank(cell)) return null;

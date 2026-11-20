@@ -5,18 +5,22 @@ export class ApiError extends Error {
   status: number
   code: string
   fieldErrors: Record<string, string>
-  constructor(status: number, message: string, code = 'REQUEST_FAILED', fieldErrors: Record<string, string> = {}) {
+  replacementToken?: string
+  constructor(status: number, message: string, code = 'REQUEST_FAILED', fieldErrors: Record<string, string> = {},
+    replacementToken?: string) {
     super(message)
     this.status = status
     this.code = code
     this.fieldErrors = fieldErrors
+    this.replacementToken = replacementToken
   }
 }
 async function checked(response: Response): Promise<Response> {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
     if (response.status === 401) window.dispatchEvent(new Event('session-expired'))
-    throw new ApiError(response.status, data.message ?? 'Не удалось выполнить запрос. Попробуйте ещё раз.', data.code, data.fieldErrors ?? {})
+    throw new ApiError(response.status, data.message ?? 'Не удалось выполнить запрос. Попробуйте ещё раз.',
+      data.code, data.fieldErrors ?? {}, typeof data.replacementToken === 'string' ? data.replacementToken : undefined)
   }
   return response
 }

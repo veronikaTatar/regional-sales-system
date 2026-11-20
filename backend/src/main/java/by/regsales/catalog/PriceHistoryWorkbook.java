@@ -15,11 +15,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 
-import static by.regsales.catalog.CatalogXlsx.*;
+import static by.regsales.common.XlsxReader.*;
 import static by.regsales.catalog.PriceHistoryDtos.*;
 
 @Component
 public class PriceHistoryWorkbook {
+    private static final int MAX_FILES = 24;
+
     private enum Column implements ColumnHeader {
         SKU("Артикул", true),
         FROM("Действует с", true),
@@ -43,11 +45,26 @@ public class PriceHistoryWorkbook {
         @Override public boolean required() { return required; }
     }
 
-    List<PriceRow> read(MultipartFile file) {
-        return readSheet(file, "Прайс", "Выберите файл Excel с прайс-листом", this::parse);
+    List<PriceRow> read(List<MultipartFile> files) {
+        if (files.isEmpty()) throw invalid("FILE_REQUIRED", "Выберите один или несколько прайсов Excel");
+        if (files.size() > MAX_FILES) throw invalid("TOO_MANY_FILES", "Выберите не более 24 прайсов за одну загрузку");
+        var rows = new ArrayList<PriceRow>();
+        for (int index = 0; index < files.size(); index++) {
+            var file = files.get(index);
+            var name = file.getOriginalFilename();
+            var source = name == null || name.isBlank() ? "Файл " + (index + 1) : name;
+            try {
+                rows.addAll(readSheet(file, "Прайс", "Выберите файл Excel с прайс-листом", sheet -> parse(sheet, source)));
+            } catch (ApiException error) {
+                if (!error.getFieldErrors().isEmpty()) throw error;
+                throw new ApiException(error.getStatus(), error.getCode(), "Проверьте файл «" + source + "». " + error.getMessage());
+            }
+            if (rows.size() > MAX_ROWS) throw invalid("TOO_MANY_ROWS", "За одну загрузку поддерживается до 5 000 строк");
+        }
+        return rows;
     }
 
-    private List<PriceRow> parse(Sheet sheet) {
+    private List<PriceRow> parse(Sheet sheet, String file) {
         var formatter = new DataFormatter(Locale.ROOT);
         var columns = readHeader(sheet.getRow(0), Column.class, formatter);
         var rows = new ArrayList<PriceRow>();
@@ -67,24 +84,24 @@ public class PriceHistoryWorkbook {
             var code = trimmed(reader.text(Column.LIST_CODE));
 
             if (sku == null || sku.length() > 50) {
-                reader.errors.putIfAbsent(Column.SKU, "Укажите артикул длиной до 50 символов");
+                reader.errors().putIfAbsent(Column.SKU, "Укажите артикул длиной до 50 символов");
             }
-            if (start == null) reader.errors.putIfAbsent(Column.FROM, "Укажите начало действия цены");
-            if (end == null) reader.errors.putIfAbsent(Column.TO, "Укажите окончание действия цены");
+            if (start == null) reader.errors().putIfAbsent(Column.FROM, "Укажите начало действия цены");
+            if (end == null) reader.errors().putIfAbsent(Column.TO, "Укажите окончание действия цены");
             if (start != null && end != null && end.isBefore(start)) {
-                reader.errors.put(Column.TO, "Дата окончания должна быть не раньше даты начала");
+                reader.errors().put(Column.TO, "Дата окончания должна быть не раньше даты начала");
             }
-            if (unitPrice == null) reader.errors.putIfAbsent(Column.PRICE, "Укажите отпускную цену");
+            if (unitPrice == null) reader.errors().putIfAbsent(Column.PRICE, "Укажите отпускную цену");
             if (currency != null && !currency.equalsIgnoreCase("BYN")) {
-                reader.errors.put(Column.CURRENCY, "Укажите валюту BYN");
+                reader.errors().put(Column.CURRENCY, "Укажите валюту BYN");
             }
             if (code != null && code.length() > 50) {
-                reader.errors.put(Column.LIST_CODE, "Код должен содержать не более 50 символов");
+                reader.errors().put(Column.LIST_CODE, "Код должен содержать не более 50 символов");
             }
 
-            int number = row.getRowNum() + 1;
-            reader.errors.forEach((column, message) -> errors.put("Строка " + number + " · " + column.header(), message));
-            rows.add(new PriceRow(number, sku, start, end, new PriceValues(unitPrice, vat, gross, retail, code)));
+            var source = file + " · строка " + (row.getRowNum() + 1);
+            reader.errors().forEach((column, message) -> errors.put(source + " · " + column.header(), message));
+            rows.add(new PriceRow(source, sku, start, end, new PriceValues(unitPrice, vat, gross, retail, code)));
             if (errors.size() >= MAX_ERRORS) break;
         }
         if (!errors.isEmpty()) {
@@ -100,7 +117,7 @@ public class PriceHistoryWorkbook {
     }
 
     private static BigDecimal money(Cell cell) {
-        var value = price(cell).stripTrailingZeros();
+        var value = decimal(cell).stripTrailingZeros();
         if (value.signum() < 0 || value.scale() > 2 || value.precision() - value.scale() > 12) {
             throw new IllegalArgumentException();
         }

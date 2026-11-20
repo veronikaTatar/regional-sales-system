@@ -40,7 +40,7 @@ public class Shipment {
     private BigDecimal unitPrice;
 
     @Column(precision = 18, scale = 2, insertable = false, updatable = false)
-    @org.hibernate.annotations.Generated(event = {org.hibernate.generator.EventType.INSERT, org.hibernate.generator.EventType.UPDATE})
+    @org.hibernate.annotations.GeneratedColumn("round(quantity * unit_price, 2)")
     private BigDecimal totalAmount;
 
     @Column(unique = true, length = 80)

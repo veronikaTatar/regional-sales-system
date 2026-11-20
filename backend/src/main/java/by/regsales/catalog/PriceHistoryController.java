@@ -3,12 +3,14 @@ package by.regsales.catalog;
 import by.regsales.security.AppPrincipal;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static by.regsales.catalog.PriceHistoryDtos.*;
@@ -29,10 +31,20 @@ public class PriceHistoryController {
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ProductImportResult importPrices(@RequestParam(value = "file", required = false) MultipartFile file,
+    public ProductImportResult importPrices(@RequestParam(value = "files", required = false) List<MultipartFile> files,
+                                            @RequestParam(value = "file", required = false) MultipartFile file,
+                                            @RequestParam(value = "replacementToken", required = false) String replacementToken,
                                             @AuthenticationPrincipal AppPrincipal actor) {
         catalog.requireManage(actor);
-        return history.importPrices(workbook.read(file), actor);
+        var uploads = new ArrayList<>(files == null ? List.of() : files);
+        if (file != null) uploads.add(file);
+        return history.importPrices(workbook.read(uploads), replacementToken, actor);
+    }
+
+    @ExceptionHandler(PriceHistoryService.ReplacementRequired.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ReplacementPrompt requestReplacement(PriceHistoryService.ReplacementRequired error) {
+        return new ReplacementPrompt(error.getCode(), error.getMessage(), error.getFieldErrors(), error.token);
     }
 
     @PostMapping("/snapshot")

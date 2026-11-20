@@ -8,6 +8,7 @@ import { Dashboard, ForbiddenPage, NotFoundPage, PlaceholderPage, ProfilePage } 
 import { RegionsPage } from './pages/CatalogPages'
 import { ProductsPage } from './pages/ProductsPage'
 import { PriceHistoryPage } from './pages/PriceHistoryPage'
+import { ShipmentsPage } from './pages/ShipmentsPage'
 import { AdministrationPage } from './pages/AdministrationPage'
 import type { Role } from './types'
 function RequireAuth() {
@@ -22,7 +23,10 @@ function RoleGuard({roles,children}: {roles:Role[];children:React.ReactNode}) {
 export function App() {
   const {loading}=useAuth()
   if (loading) return <div className="boot-screen"><Loading label="Подключаем рабочее пространство…"/></div>
-  const content: Record<string,React.ReactNode> = {'/':<Dashboard/>,'/profile':<ProfilePage/>,'/products':<ProductsPage/>,'/regions':<RegionsPage/>,'/administration':<AdministrationPage/>}
+  const content: Record<string,React.ReactNode> = {
+    '/': <Dashboard/>, '/profile': <ProfilePage/>, '/products': <ProductsPage/>, '/regions': <RegionsPage/>,
+    '/shipments': <ShipmentsPage/>, '/administration': <AdministrationPage/>,
+  }
   return (
     <Routes>
       <Route path="/login" element={<AuthPage mode="login"/>}/>
