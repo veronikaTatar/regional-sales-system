@@ -34,7 +34,7 @@ public final class PlanDtos {
             @DecimalMin(value = "0", message = "Укажите процент от 0 до 100") @DecimalMax(value = "100", message = "Укажите процент от 0 до 100")
             @Digits(integer = 3, fraction = 2, message = "Укажите процент с точностью до двух знаков") BigDecimal maxDiscountPercent,
             @Size(max = 2000, message = "Комментарий должен содержать до 2000 символов") String planningComment,
-            @JsonAlias("sendToManager") boolean requestAnalysis,
+            @JsonAlias({"sendToManager", "requestSales"}) boolean requestAnalysis,
             @PositiveOrZero Long version) {
         public Input {
             targetRevenue = normalize(targetRevenue);
@@ -60,7 +60,7 @@ public final class PlanDtos {
                              @NotNull @Size(max = 5000) List<@NotNull LineInput> items,
                              boolean submit) {}
 
-    public enum Decision { APPROVE, RETURN }
+    public enum Decision { APPROVE, RETURN, RETURN_ANALYSIS, REJECT }
 
     public record ReviewInput(@NotNull @PositiveOrZero Long version, @NotNull Decision decision,
                               @Size(max = 2000, message = "Комментарий должен содержать до 2000 символов") String reviewComment) {
@@ -100,6 +100,8 @@ public final class PlanDtos {
 
     public record SalesPeriod(LocalDate from, LocalDate to, @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal revenue) {}
 
+    public record SalesSubmission(SalesPeriod period, long shipmentCount, Instant submittedAt) {}
+
     public record Item(Long productId, String sku, String name, String unit,
                        @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal plannedQuantity,
                        @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal plannedUnitPrice,
@@ -111,9 +113,10 @@ public final class PlanDtos {
                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal maxDiscountPercent,
                          String planningComment, String reviewComment, String approvedBy, Instant approvedAt,
                          boolean canEditParameters, boolean canEditItems, boolean canReview, boolean canAnalyze,
-                         boolean canWithdraw,
+                         boolean canWithdraw, boolean canSubmitSales,
                          Recommendation recommendation,
-                         List<Item> items, List<Offer> offers, SalesPeriod previous, SalesPeriod actual) {}
+                         List<Item> items, List<Offer> offers, SalesPeriod previous, SalesPeriod actual,
+                         SalesSubmission salesSubmission, String planningCheck) {}
 
     public record Result(Summary plan, @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal actualRevenue) {}
 

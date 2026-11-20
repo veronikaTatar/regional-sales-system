@@ -3,12 +3,15 @@ import type { PlanStatus, PlanSummary } from './types'
 
 export const planStatusLabels: Record<PlanStatus, string> = {
   DRAFT: 'Черновик',
+  AWAITING_SALES_DATA: 'Ожидает данные о продажах',
+  SALES_REVISION: 'Исправление данных о продажах',
   AWAITING_ANALYSIS: 'На анализе',
   IN_PROGRESS: 'В работе',
   NEEDS_CORRECTION: 'Требует исправления',
   IN_REVIEW: 'На согласовании',
-  REVISION: 'Отклонён',
+  REVISION: 'На доработке',
   APPROVED: 'Утверждён',
+  REJECTED: 'Отклонён',
   CANCELLED: 'Отменён',
 }
 
@@ -19,7 +22,7 @@ export function formatPeriod(from: string, to: string) {
 }
 
 export function planStatusLabel(plan: PlanSummary) {
-  return plan.status === 'DRAFT' && plan.sentToManagerAt ? 'В работе' : planStatusLabels[plan.status]
+  return planStatusLabels[plan.status]
 }
 
 export function normalizeDecimal(value: string, wholeDigits: number, fractionDigits: number) {

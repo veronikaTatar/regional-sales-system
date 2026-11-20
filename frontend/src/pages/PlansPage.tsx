@@ -22,8 +22,8 @@ export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'ana
   const visible = plans.data?.filter(plan => mode === 'plans' || plan.status === expectedStatus) ?? []
   const heading = {
     plans: { title: 'Региональные планы', subtitle: user?.role === 'MANAGER'
-      ? 'Ваши задания и планы продаж по закреплённым регионам.' : 'Задания на анализ и планы продаж по регионам.', list: 'Планы продаж', empty: 'Планов пока нет' },
-    review: { title: 'Согласование планов', subtitle: 'Планы, прошедшие проверку данных.', list: 'На согласовании', empty: 'Планов на согласовании нет' },
+      ? 'Задания и проекты планов по вашим регионам.' : 'Параметры планирования и проекты региональных планов.', list: 'Планы продаж', empty: 'Планов пока нет' },
+    review: { title: 'Согласование планов', subtitle: 'Проекты с результатами проверки плановых показателей.', list: 'На согласовании', empty: 'Планов на согласовании нет' },
     analysis: { title: 'Покупательная способность', subtitle: 'Задания на расчёт индекса и подготовку рекомендации.', list: 'Задания на анализ', empty: 'Заданий на анализ пока нет' },
   }[mode]
 
@@ -68,7 +68,7 @@ export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'ana
                   <td><div className="plan-row-actions">
                     <Link className="text-button" to={'/plans/' + plan.id}>{mode === 'analysis' ? 'К расчёту' : 'Открыть'}</Link>
                     {manage && plan.status !== 'APPROVED' && <>
-                      {plan.status !== 'CANCELLED' && <button type="button" className="text-button danger-text" disabled={plans.loading}
+                      {plan.status !== 'CANCELLED' && plan.status !== 'REJECTED' && <button type="button" className="text-button danger-text" disabled={plans.loading}
                         onClick={() => setRemoval({ plan, action: 'cancel' })}>Отменить</button>}
                       <button type="button" className="text-button danger-text" disabled={plans.loading}
                         onClick={() => setRemoval({ plan, action: 'delete' })}>Удалить</button>
@@ -83,8 +83,8 @@ export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'ana
             <ClipboardList size={40} strokeWidth={1.3} aria-hidden="true"/>
             <h2>{heading.empty}</h2>
             {mode === 'plans' && <p>{user?.role === 'MANAGER'
-              ? 'Здесь появятся задания с расчётом аналитика.'
-              : 'Создайте план для региона и передайте его аналитику.'}</p>}
+              ? 'Здесь появится задание по региональному плану.'
+              : 'Задайте параметры планирования и передайте задание на анализ.'}</p>}
           </div>
         )}
       </section>

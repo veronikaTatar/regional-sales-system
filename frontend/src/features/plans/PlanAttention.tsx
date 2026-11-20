@@ -5,13 +5,16 @@ import { formatPeriod } from './planFormat'
 import type { PlanSummary } from './types'
 
 const tasks = {
-  DRAFT: 'Заполнить план',
+  DRAFT: 'Открыть черновик',
+  AWAITING_SALES_DATA: 'Предоставить данные о продажах',
+  SALES_REVISION: 'Исправить данные о продажах',
   AWAITING_ANALYSIS: 'Подготовить анализ',
-  IN_PROGRESS: 'Заполнить план',
+  IN_PROGRESS: 'Сформировать проект плана',
   NEEDS_CORRECTION: 'Исправить данные плана',
   IN_REVIEW: 'Проверить план',
-  REVISION: 'Доработать план',
-  APPROVED: 'Открыть план',
+  REVISION: 'Доработать проект по замечаниям',
+  APPROVED: 'Открыть утверждённый план',
+  REJECTED: 'Открыть отклонённый план',
   CANCELLED: 'Открыть план',
 }
 
@@ -41,7 +44,7 @@ export function PlanAttention() {
           </li>
         ))}
       </ul>
-      {data.length > 5 && <Link className="text-button plan-all-tasks" to={data[0].status === 'IN_REVIEW' ? '/approvals'
+      {data.length > 5 && <Link className="text-button plan-all-tasks" to={data.every(plan => plan.status === 'IN_REVIEW') ? '/approvals'
         : data[0].status === 'AWAITING_ANALYSIS' ? '/purchasing-power' : '/plans'}>
         Открыть список заданий
       </Link>}

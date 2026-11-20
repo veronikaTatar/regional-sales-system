@@ -67,6 +67,20 @@
   color: #975220;
 }
 
+.mini-status.plan-status-sales_revision {
+  background: #fff0e3;
+  color: #975220;
+}
+
+.mini-status.plan-status-rejected {
+  background: #fdecea;
+  color: #a73532;
+}
+
+.plan-sales-actions {
+  margin-top: 16px;
+}
+
 .mini-status.plan-status-cancelled {
   background: #eceef0;
   color: #56626b;

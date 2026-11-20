@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, Check, Pencil, Undo2 } from 'lucide-react'
+import { ArrowLeft, Check, Pencil, Send, Undo2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import { Loading } from '../components/Loading'
@@ -10,7 +10,7 @@ import { PlanEditor } from '../features/plans/PlanEditor'
 import { PlanItemsEditor } from '../features/plans/PlanItemsEditor'
 import { PlanReviewDialog } from '../features/plans/PlanReviewDialog'
 import { formatGoalProgress, formatPeriod, formatPlanMoney, formatPlanQuantity, planCents, planStatusLabel } from '../features/plans/planFormat'
-import type { PlanDetail, PlanSummary } from '../features/plans/types'
+import type { PlanDecision, PlanDetail, PlanSummary } from '../features/plans/types'
 import { useResource } from '../hooks/useResource'
 import { PageHeading } from './WorkspacePages'
 
@@ -20,11 +20,11 @@ export function PlanDetailPage() {
   const { id } = useParams()
   const { user } = useAuth()
   const { data: detail, error, loading, refresh } = useResource<PlanDetail>('/plans/' + id)
-  const [dialog, setDialog] = useState<'EDIT' | 'APPROVE' | 'RETURN' | null>(null)
+  const [dialog, setDialog] = useState<'EDIT' | PlanDecision | null>(null)
   const [notice, setNotice] = useState('')
   const [failedCheck, setFailedCheck] = useState<PlanSummary | null>(null)
-  const [withdrawing, setWithdrawing] = useState(false)
-  const [withdrawError, setWithdrawError] = useState('')
+  const [pendingAction, setPendingAction] = useState<'sales' | 'withdraw' | null>(null)
+  const [actionError, setActionError] = useState('')
   const analyst = user?.role === 'ANALYST'
   const back = <Link to={analyst ? '/purchasing-power' : '/plans'} className="button button-secondary">
     <ArrowLeft size={16} aria-hidden="true"/>{analyst ? 'К заданиям' : 'К планам'}</Link>
@@ -41,40 +41,43 @@ export function PlanDetailPage() {
 
   async function onSaved(saved: PlanSummary) {
     setDialog(null)
-    setWithdrawError('')
+    setActionError('')
     if (saved.status === 'NEEDS_CORRECTION') {
       setFailedCheck(saved)
       setNotice('')
       return
     }
-    if (saved.status === 'APPROVED') setNotice('План утверждён.')
-    else if (saved.status === 'IN_REVIEW') setNotice('План передан на согласование.')
-    else if (plan.status === 'IN_REVIEW' && saved.status === 'IN_PROGRESS') setNotice('План отозван. Позиции доступны для редактирования.')
-    else if (saved.status === 'AWAITING_ANALYSIS' && plan.status !== 'AWAITING_ANALYSIS') setNotice('Задание передано аналитику.')
-    else if (dialog === 'RETURN') setNotice('План возвращён менеджеру на доработку.')
-    else if (saved.sentToManagerAt && !plan.sentToManagerAt) setNotice('Рекомендация сохранена. Задание передано менеджеру.')
+    if (saved.status === 'APPROVED') setNotice('План утверждён и опубликован для менеджера.')
+    else if (saved.status === 'REJECTED') setNotice('Отказ зафиксирован.')
+    else if (saved.status === 'IN_REVIEW') setNotice('Проект проверен и передан руководителю.')
+    else if (saved.status === 'SALES_REVISION') setNotice('')
+    else if (dialog === 'RETURN') setNotice(saved.status === 'AWAITING_ANALYSIS'
+      ? 'Замечания к рекомендации переданы аналитику.' : 'Замечания к проекту переданы менеджеру.')
+    else if (plan.status === 'IN_REVIEW' && saved.status === 'IN_PROGRESS') setNotice('Проект доступен для редактирования.')
+    else if (plan.status === 'AWAITING_ANALYSIS' && saved.status === 'IN_PROGRESS') setNotice('Рекомендация передана менеджеру.')
+    else if (saved.status === 'AWAITING_ANALYSIS' && plan.status !== 'AWAITING_ANALYSIS') setNotice('Сведения о продажах проверены и переданы аналитику.')
     else setNotice(dialog === 'EDIT' ? 'Параметры плана сохранены.' : 'Позиции плана сохранены.')
     await refresh()
     setFailedCheck(null)
   }
 
-  async function withdraw() {
-    if (withdrawing || loading) return
-    setWithdrawing(true)
+  async function applyAction(action: 'sales' | 'withdraw') {
+    if (pendingAction || loading) return
+    setPendingAction(action)
     setNotice('')
-    setWithdrawError('')
+    setActionError('')
     try {
-      const updated = await api<PlanSummary>('/plans/' + plan.id + '/withdraw?version=' + plan.version, { method: 'POST' })
+      const updated = await api<PlanSummary>('/plans/' + plan.id + '/' + action + '?version=' + plan.version, { method: 'POST' })
       await onSaved(updated)
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
-        setWithdrawError('Статус плана изменился. Проверьте карточку.')
+        setActionError('План изменился. Проверьте обновлённую карточку.')
         await refresh()
       } else {
-        setWithdrawError(cause instanceof Error ? cause.message : 'Не удалось отозвать план.')
+        setActionError(cause instanceof Error ? cause.message : 'Не удалось выполнить действие.')
       }
     } finally {
-      setWithdrawing(false)
+      setPendingAction(null)
     }
   }
 
@@ -83,8 +86,8 @@ export function PlanDetailPage() {
       <div className="product-page-actions">
         {back}
         {detail.canWithdraw && (
-          <button type="button" className="button button-primary" disabled={withdrawing || loading} onClick={() => void withdraw()}>
-            <Undo2 size={16} aria-hidden="true"/>{withdrawing ? 'Отзываем…' : 'Отозвать на редактирование'}
+          <button type="button" className="button button-secondary" disabled={pendingAction !== null || loading} onClick={() => void applyAction('withdraw')}>
+            <Undo2 size={16} aria-hidden="true"/>{pendingAction === 'withdraw' ? 'Отзываем…' : 'Отозвать на редактирование'}
           </button>
         )}
         {detail.canEditParameters && (
@@ -93,17 +96,20 @@ export function PlanDetailPage() {
           </button>
         )}
         {detail.canReview && <>
-          <button type="button" className="button button-secondary" disabled={loading} onClick={() => setDialog('RETURN')}>
-            <Undo2 size={16} aria-hidden="true"/>Вернуть на доработку
+          <button type="button" className="button button-secondary" disabled={loading || pendingAction !== null} onClick={() => setDialog('RETURN')}>
+            Сформировать замечания
           </button>
-          <button type="button" className="button button-primary" disabled={loading} onClick={() => setDialog('APPROVE')}>
+          <button type="button" className="button button-secondary danger-text" disabled={loading || pendingAction !== null} onClick={() => setDialog('REJECT')}>
+            Оформить отказ
+          </button>
+          <button type="button" className="button button-primary" disabled={loading || pendingAction !== null} onClick={() => setDialog('APPROVE')}>
             <Check size={16} aria-hidden="true"/>Утвердить план
           </button>
         </>}
       </div>
     </PageHeading>
     {notice && <p className="alert admin-success" role="status">{notice}</p>}
-    {withdrawError && <div className="alert alert-error" role="alert">{withdrawError}</div>}
+    {actionError && <div className="alert alert-error" role="alert">{actionError}</div>}
     <section className="panel plan-parameters" aria-labelledby="plan-parameters-heading">
       <div className="plan-parameters-heading">
         <h2 id="plan-parameters-heading">Задание</h2>
@@ -121,10 +127,28 @@ export function PlanDetailPage() {
       </dl>
       {detail.planningComment && <p className="plan-comment">{detail.planningComment}</p>}
       {detail.reviewComment && <div className={'plan-review-note ' + (plan.status === 'APPROVED' ? 'plan-reviewed' : '')}>
-        <strong>{plan.status === 'APPROVED' ? 'Комментарий к утверждению' : 'Замечание руководителя'}</strong>
+        <strong>{plan.status === 'APPROVED' ? 'Комментарий к утверждению'
+          : plan.status === 'REJECTED' ? 'Причина отказа' : 'Замечание руководителя'}</strong>
         <p className="plan-comment">{detail.reviewComment}</p>
       </div>}
     </section>
+
+    {detail.salesSubmission && <section className="panel plan-parameters analysis-section" aria-label="Сведения о продажах">
+      <div className="plan-parameters-heading"><h2>Сведения о продажах</h2></div>
+      <dl>
+        <div><dt>Отчётный период</dt><dd>{formatPeriod(detail.salesSubmission.period.from, detail.salesSubmission.period.to)}</dd></div>
+        <div><dt>Строк отгрузок</dt><dd>{detail.salesSubmission.shipmentCount.toLocaleString('ru-BY')}</dd></div>
+        <div><dt>Фактическая выручка</dt><dd>{formatPlanMoney(detail.salesSubmission.period.revenue)} BYN</dd></div>
+        {detail.salesSubmission.submittedAt && <div><dt>Дата проверки</dt>
+          <dd>{approvalDate.format(new Date(detail.salesSubmission.submittedAt))}</dd></div>}
+      </dl>
+      {detail.canSubmitSales && <div className="product-page-actions plan-sales-actions">
+        <Link to="/shipments" className="button button-secondary">Открыть отгрузки</Link>
+        <button type="button" className="button button-primary" disabled={pendingAction !== null || loading} onClick={() => void applyAction('sales')}>
+          <Send size={16} aria-hidden="true"/>{pendingAction === 'sales' ? 'Проверяем отгрузки…' : 'Предоставить данные о продажах'}
+        </button>
+      </div>}
+    </section>}
 
     <div className="plan-metrics">
       <article className="panel plan-metric"><span>Целевая выручка</span>
@@ -140,18 +164,21 @@ export function PlanDetailPage() {
     </div>
 
     {detail.recommendation && <PlanRecommendation recommendation={detail.recommendation} linkToCalculation={user?.role !== 'MANAGER'}/>}
+    {detail.planningCheck && <section className="panel plan-parameters analysis-section" aria-label="Результат проверки проекта">
+      <div className="plan-parameters-heading"><h2>Результат проверки проекта</h2></div>
+      <p className="plan-comment">{detail.planningCheck}</p>
+    </section>}
     {plan.validationNote && <div className="alert alert-error plan-validation-note" role="alert">
-      <strong>Ошибки проверки данных</strong>
+      <strong>{plan.status === 'SALES_REVISION' ? 'Результат проверки данных о продажах' : 'Ошибки проверки позиций'}</strong>
       <p>{plan.validationNote}</p>
     </div>}
-    {detail.canAnalyze ? <PlanAnalysisForm key={plan.id + '-' + plan.version} plan={plan} onSaved={onSaved} onReload={refresh}/>
-    : <section className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
+    {detail.canAnalyze && <PlanAnalysisForm key={plan.id + '-' + plan.version} plan={plan} onSaved={onSaved} onReload={refresh}/>}
+    {(detail.canEditItems || detail.items.length > 0) && <section className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
       {detail.canEditItems ? (
         <PlanItemsEditor key={plan.id + '-' + detail.plan.version} detail={{ ...detail, plan }} onSaved={onSaved} onReload={refresh}/>
       ) : <>
         <div className="plan-section-top"><h2>Позиции плана</h2></div>
-        {detail.items.length ? (
-          <div className="table-scroll">
+        <div className="table-scroll">
             <table className="product-table plan-items-table">
               <thead><tr>
                 <th scope="col">Товар</th>
@@ -174,13 +201,11 @@ export function PlanDetailPage() {
                 </tr>)}
               </tbody>
             </table>
-          </div>
-        ) : <p className="plan-empty-inline">{plan.status === 'AWAITING_ANALYSIS'
-          ? 'Менеджер получит задание после публикации рекомендации.' : 'Менеджер ещё не добавил позиции в этот план.'}</p>}
+        </div>
       </>}
     </section>}
     {dialog === 'EDIT' && detail.canEditParameters && <PlanEditor detail={detail} onClose={() => setDialog(null)} onSaved={onSaved}/>}
-    {detail.canReview && (dialog === 'APPROVE' || dialog === 'RETURN') && (
+    {detail.canReview && dialog && dialog !== 'EDIT' && (
       <PlanReviewDialog plan={plan} decision={dialog} onClose={() => setDialog(null)} onSaved={onSaved}/>
     )}
   </>

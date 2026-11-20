@@ -17,7 +17,8 @@ export function PlanEditor({ detail, onClose, onSaved }: {
   const options = useResource<PlanRegion[]>('/plans/options')
   const selection = initialPeriod(plan?.periodStart, plan?.periodEnd)
   const initialDates = periodDates(selection)
-  const assigned = plan?.status === 'AWAITING_ANALYSIS' || !!plan?.sentToManagerAt
+  const assigned = !!plan?.sentToManagerAt
+  const canRequestAnalysis = !assigned || detail?.plan.status === 'AWAITING_SALES_DATA' || detail?.plan.status === 'SALES_REVISION'
   const fixed = plan && (assigned || initialDates.periodStart !== plan.periodStart || initialDates.periodEnd !== plan.periodEnd)
   const [period, setPeriod] = useState(selection)
   const [regionId, setRegionId] = useState(plan ? String(plan.regionId) : '')
@@ -152,8 +153,8 @@ export function PlanEditor({ detail, onClose, onSaved }: {
           <button type="submit" className={'button ' + (assigned ? 'button-primary' : 'button-secondary')} disabled={busy || !ready}>
             {assigned ? 'Сохранить изменения' : 'Сохранить черновик'}
           </button>
-          {!assigned && <button type="submit" value="analysis" className="button button-primary" disabled={busy || !ready}>
-            Передать аналитику
+          {canRequestAnalysis && <button type="submit" value="analysis" className="button button-primary" disabled={busy || !ready}>
+            Передать на анализ
           </button>}
         </footer>
       </form>

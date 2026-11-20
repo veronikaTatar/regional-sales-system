@@ -23,7 +23,8 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
     Optional<Shipment> findByReferenceNumberIgnoreCase(String referenceNumber);
 
     @Query("""
-            select shipment.product.id as productId, sum(shipment.quantity) as quantity, sum(shipment.totalAmount) as revenue
+            select shipment.product.id as productId, sum(shipment.quantity) as quantity,
+                sum(shipment.totalAmount) as revenue, count(shipment.id) as shipmentCount
             from Shipment shipment where shipment.region.id = :regionId and shipment.shipmentDate between :from and :to
             group by shipment.product.id
             """)
@@ -46,5 +47,6 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
         Long getProductId();
         BigDecimal getQuantity();
         BigDecimal getRevenue();
+        long getShipmentCount();
     }
 }

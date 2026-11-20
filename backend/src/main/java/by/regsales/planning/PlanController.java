@@ -71,6 +71,12 @@ public class PlanController {
         plans.delete(id, version, actor);
     }
 
+    @PostMapping("/{id}/sales")
+    @PreAuthorize("hasRole('MANAGER')")
+    public Summary submitSales(@PathVariable Long id, @RequestParam Long version, @AuthenticationPrincipal AppPrincipal actor) {
+        return plans.submitSales(id, version, actor);
+    }
+
     @PostMapping("/{id}/analysis/preview")
     @PreAuthorize("hasRole('ANALYST')")
     public Estimate previewAnalysis(@PathVariable Long id, @Valid @RequestBody PreviewInput input,

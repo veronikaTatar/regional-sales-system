@@ -176,7 +176,7 @@ export function PlanItemsEditor({ detail, onSaved, onReload }: {
         <div className="product-page-actions">
           <button type="submit" className="button button-secondary" disabled={!!busy || stale}>Сохранить позиции</button>
           <button type="submit" value="review" className="button button-primary" disabled={!!busy || stale}>
-            {busy === 'review' ? 'Проверяем данные…' : 'Отправить на проверку'}
+            {busy === 'review' ? 'Проверяем проект…' : 'Проверить проект плана'}
           </button>
         </div>
       </footer>

@@ -40,6 +40,9 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -104,7 +107,10 @@ public class PlanService {
                 if (regionIds.isEmpty()) yield List.of();
                 var visible = plans.findByAssignedManagerIdAndRegionIdInAndSentToManagerAtIsNotNullOrderByPeriodStartDescIdDesc(
                         user.getId(), regionIds);
-                yield attention ? visible.stream().filter(PlanService::editable).toList() : visible;
+                yield attention ? visible.stream()
+                        .filter(plan -> awaitingSales(plan) || editable(plan) || plan.getStatus() == PlanStatus.APPROVED)
+                        .sorted(Comparator.comparing(plan -> plan.getStatus() == PlanStatus.APPROVED))
+                        .toList() : visible;
             }
             default -> throw new AccessDeniedException("Доступ к планам ограничен");
         };
@@ -128,8 +134,7 @@ public class PlanService {
         var canAnalyze = user.getRole().getCode() == RoleCode.ANALYST && plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
         var recommendation = analytics.recommendation(plan);
         var saved = items.findByRegionalPlanIdOrderByProductNameAscIdAsc(id);
-        var previousEnd = plan.getPeriodStart().minusDays(1);
-        var previous = facts(plan, previousStart(plan), previousEnd);
+        var previous = previousFacts(plan);
         var actual = plan.getStatus() == PlanStatus.APPROVED
                 ? facts(plan, plan.getPeriodStart(), plan.getPeriodEnd()) : null;
         var lines = saved.stream().map(item -> {
@@ -143,9 +148,9 @@ public class PlanService {
         return new Detail(Summary.from(plan, revenue), plan.getBudgetLimit(), plan.getMaxDiscountPercent(),
                 plan.getPlanningComment(), plan.getReviewComment(),
                 plan.getApprovedByUser() == null ? null : plan.getApprovedByUser().getFullName(), plan.getApprovedAt(),
-                head && canEditParameters(plan), canEditItems, head && onReview, canAnalyze, manager && onReview,
+                head && canEditParameters(plan), canEditItems, head && onReview, canAnalyze, manager && onReview, manager && awaitingSales(plan),
                 recommendation, lines, canEditItems ? offers(plan, recommendation) : List.of(),
-                previous.period(), actual == null ? null : actual.period());
+                previous.period(), actual == null ? null : actual.period(), salesSubmission(plan, previous), plan.getPlanningCheck());
     }
 
     @Transactional
@@ -169,7 +174,7 @@ public class PlanService {
     @Transactional
     public Summary cancel(Long id, Long version, AppPrincipal actor) {
         var plan = headPlanForUpdate(id, version, actor);
-        if (plan.getStatus() == PlanStatus.APPROVED || plan.getStatus() == PlanStatus.CANCELLED) {
+        if (List.of(PlanStatus.APPROVED, PlanStatus.REJECTED, PlanStatus.CANCELLED).contains(plan.getStatus())) {
             throw invalidStage("Отменить можно только активный неутверждённый план");
         }
         plan.setStatus(PlanStatus.CANCELLED);
@@ -184,6 +189,35 @@ public class PlanService {
         if (plan.getStatus() == PlanStatus.APPROVED) throw invalidStage("Утверждённый план защищён от удаления");
         items.deleteForPlan(id);
         plans.delete(plan);
+    }
+
+    @Transactional
+    public Summary submitSales(Long id, Long version, AppPrincipal actor) {
+        var plan = managerPlanForUpdate(id, version, actor);
+        if (!awaitingSales(plan)) throw invalidStage("План должен ожидать сведения о продажах");
+
+        checkSalesForAnalysis(plan, Instant.now());
+        plans.saveAndFlush(plan);
+        return summary(plan);
+    }
+
+    private void checkSalesForAnalysis(RegionalPlan plan, Instant now) {
+        var reported = previousFacts(plan);
+        if (reported.shipmentCount() == 0) {
+            plan.setStatus(PlanStatus.SALES_REVISION);
+            plan.setValidationNote("Добавьте или импортируйте отгрузки по региону за указанный отчётный период.");
+            plan.setSalesSubmittedAt(null);
+            plan.setSalesShipmentCount(null);
+            plan.setSalesRevenue(null);
+        } else {
+            plan.setStatus(PlanStatus.AWAITING_ANALYSIS);
+            plan.setSalesSubmittedAt(now);
+            plan.setSalesShipmentCount(reported.shipmentCount());
+            plan.setSalesRevenue(reported.period().revenue());
+            plan.setValidationNote(null);
+        }
+        plan.setPlanningCheck(null);
+        plan.setUpdatedAt(now);
     }
 
     public Estimate previewAnalysis(Long id, PreviewInput input, AppPrincipal actor) {
@@ -207,7 +241,6 @@ public class PlanService {
         plan.setPurchasingPowerCalculation(recommendation.getPurchasingPowerCalculation());
         var now = Instant.now();
         plan.setStatus(PlanStatus.IN_PROGRESS);
-        plan.setSentToManagerAt(now);
         plan.setUpdatedAt(now);
         plans.saveAndFlush(plan);
         return summary(plan);
@@ -215,10 +248,7 @@ public class PlanService {
 
     @Transactional
     public Summary saveItems(Long id, ItemsInput input, AppPrincipal actor) {
-        var manager = requireRole(actor, RoleCode.MANAGER);
-        var plan = findPlan(id, true);
-        requireAccess(plan, manager);
-        checkVersion(plan, input.version());
+        var plan = managerPlanForUpdate(id, input.version(), actor);
         requireEditable(plan);
 
         var stored = items.findByRegionalPlanIdOrderByProductNameAscIdAsc(id).stream()
@@ -231,6 +261,7 @@ public class PlanService {
             if (!input.submit()) throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Проверьте позиции плана", errors);
             plan.setStatus(PlanStatus.NEEDS_CORRECTION);
             plan.setValidationNote(String.join("\n", errors.values()));
+            plan.setPlanningCheck(null);
             plan.setUpdatedAt(Instant.now());
             plans.saveAndFlush(plan);
             return summary(plan);
@@ -250,6 +281,7 @@ public class PlanService {
         items.deleteAll(stored.values());
         plan.setStatus(input.submit() ? PlanStatus.IN_REVIEW : PlanStatus.IN_PROGRESS);
         plan.setValidationNote(null);
+        plan.setPlanningCheck(input.submit() ? checkPlanningParameters(plan, input.items(), catalog) : null);
         plan.setUpdatedAt(Instant.now());
         items.saveAllAndFlush(changes);
         return summary(plan);
@@ -257,12 +289,10 @@ public class PlanService {
 
     @Transactional
     public Summary withdraw(Long id, Long version, AppPrincipal actor) {
-        var manager = requireRole(actor, RoleCode.MANAGER);
-        var plan = findPlan(id, true);
-        requireAccess(plan, manager);
-        checkVersion(plan, version);
+        var plan = managerPlanForUpdate(id, version, actor);
         if (plan.getStatus() != PlanStatus.IN_REVIEW) throw invalidStage("Отозвать можно план на согласовании");
         plan.setStatus(PlanStatus.IN_PROGRESS);
+        plan.setPlanningCheck(null);
         plan.setUpdatedAt(Instant.now());
         plans.saveAndFlush(plan);
         return summary(plan);
@@ -274,15 +304,22 @@ public class PlanService {
         var plan = findPlan(id, true);
         checkVersion(plan, input.version());
         if (plan.getStatus() != PlanStatus.IN_REVIEW) throw invalidStage("План должен быть на согласовании");
+        requireAnalysis(plan);
         var now = Instant.now();
-        if (input.decision() == Decision.RETURN) {
-            if (input.reviewComment() == null) throw fieldError("reviewComment", "Укажите, что нужно исправить");
-            plan.setStatus(PlanStatus.REVISION);
-        } else {
+        if (input.decision() == Decision.APPROVE) {
             if (!items.existsByRegionalPlanId(id)) throw fieldError("items", "Для утверждения нужны товарные позиции");
             plan.setApprovedAt(now);
             plan.setApprovedByUser(head);
             plan.setStatus(PlanStatus.APPROVED);
+        } else {
+            if (input.reviewComment() == null) throw fieldError("reviewComment", "Укажите причину решения");
+            switch (input.decision()) {
+                case RETURN -> plan.setStatus(PlanStatus.REVISION);
+                case RETURN_ANALYSIS -> plan.setStatus(PlanStatus.AWAITING_ANALYSIS);
+                case REJECT -> plan.setStatus(PlanStatus.REJECTED);
+                default -> throw new IllegalStateException("Недопустимое решение о возврате");
+            }
+            if (input.decision() != Decision.REJECT) plan.setPlanningCheck(null);
         }
         plan.setReviewComment(input.reviewComment());
         plan.setUpdatedAt(now);
@@ -291,8 +328,7 @@ public class PlanService {
     }
 
     private void applyParameters(RegionalPlan plan, Input input) {
-        var awaitingAnalysis = plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
-        var assigned = awaitingAnalysis || plan.getSentToManagerAt() != null;
+        var assigned = plan.getSentToManagerAt() != null;
         boolean identityChanged = plan.getRegion() == null || !plan.getRegion().getId().equals(input.regionId())
                 || !Objects.equals(plan.getPeriodStart(), input.periodStart()) || !Objects.equals(plan.getPeriodEnd(), input.periodEnd());
         if (identityChanged) {
@@ -321,9 +357,9 @@ public class PlanService {
         plan.setMaxDiscountPercent(input.maxDiscountPercent());
         plan.setPlanningComment(input.planningComment());
         plan.setUpdatedAt(now);
-        if (input.requestAnalysis() && !assigned) {
-            analytics.requireStatisticsFor(plan);
-            plan.setStatus(PlanStatus.AWAITING_ANALYSIS);
+        if (input.requestAnalysis() && (!assigned || awaitingSales(plan))) {
+            if (!assigned) plan.setSentToManagerAt(now);
+            checkSalesForAnalysis(plan, now);
         }
     }
 
@@ -359,10 +395,7 @@ public class PlanService {
     private List<Offer> offers(RegionalPlan plan, Recommendation recommendation) {
         var active = products.findAllByActiveTrueOrderByNameAsc();
         if (active.isEmpty()) return List.of();
-        var date = plan.getPeriodStart();
-        var byProduct = prices.intersecting(active.stream().map(Product::getId).toList(), date, date).stream()
-                .collect(Collectors.toMap(price -> price.getProduct().getId(), Function.identity(),
-                        (left, right) -> left.getValidFrom().isAfter(right.getValidFrom()) ? left : right));
+        var byProduct = applicablePrices(active.stream().map(Product::getId).toList(), plan.getPeriodStart());
         return active.stream().map(product -> {
             ProductPrice price = byProduct.get(product.getId());
             var base = price == null ? product.getCurrentPrice() : price.getUnitPrice();
@@ -373,12 +406,56 @@ public class PlanService {
         }).toList();
     }
 
+    private Map<Long, ProductPrice> applicablePrices(Collection<Long> productIds, LocalDate date) {
+        return prices.intersecting(productIds, date, date).stream()
+                .collect(Collectors.toMap(price -> price.getProduct().getId(), Function.identity(),
+                        (left, right) -> left.getValidFrom().isAfter(right.getValidFrom()) ? left : right));
+    }
+
+    private String checkPlanningParameters(RegionalPlan plan, List<LineInput> lines, Map<Long, Product> catalog) {
+        var notes = new ArrayList<String>();
+        var revenue = lines.stream().map(line -> line.plannedQuantity().multiply(line.plannedUnitPrice()).setScale(2, RoundingMode.HALF_UP))
+                .reduce(ZERO_REVENUE, BigDecimal::add);
+        if (plan.getTargetRevenue() != null) {
+            var gap = plan.getTargetRevenue().subtract(revenue);
+            notes.add(gap.signum() > 0 ? "Выручка ниже цели на " + gap.toPlainString() + " BYN." : "Цель по выручке достигнута.");
+        }
+        if (plan.getMaxDiscountPercent() != null) {
+            var prices = applicablePrices(catalog.keySet(), plan.getPeriodStart());
+            var minimumMultiplier = BigDecimal.ONE.subtract(plan.getMaxDiscountPercent().movePointLeft(2));
+            long beyondLimit = lines.stream().filter(line -> {
+                var price = prices.get(line.productId());
+                var base = price == null ? catalog.get(line.productId()).getCurrentPrice() : price.getUnitPrice();
+                return line.plannedUnitPrice().compareTo(base.multiply(minimumMultiplier)) < 0;
+            }).count();
+            notes.add(beyondLimit == 0 ? "Предельная скидка соблюдена."
+                    : "Число позиций с превышением предельной скидки — " + beyondLimit + ".");
+        }
+        if (plan.getBudgetLimit() != null) notes.add("Проверка лимита затрат требует данных о себестоимости.");
+        notes.add("Проверка ресурсов требует данных об остатках.");
+        return String.join("\n", notes);
+    }
+
+    private Facts previousFacts(RegionalPlan plan) {
+        return facts(plan, previousStart(plan), plan.getPeriodStart().minusDays(1));
+    }
+
+    private static SalesSubmission salesSubmission(RegionalPlan plan, Facts previous) {
+        if (plan.getSentToManagerAt() == null) return null;
+        if (plan.getSalesSubmittedAt() == null || awaitingSales(plan)) {
+            return new SalesSubmission(previous.period(), previous.shipmentCount(), null);
+        }
+        var period = new SalesPeriod(previous.period().from(), previous.period().to(), plan.getSalesRevenue());
+        return new SalesSubmission(period, plan.getSalesShipmentCount(), plan.getSalesSubmittedAt());
+    }
+
     private Facts facts(RegionalPlan plan, LocalDate from, LocalDate to) {
         var totals = shipments.factByProduct(plan.getRegion().getId(), from, to);
         var revenue = totals.stream().map(ShipmentRepository.ProductTotal::getRevenue).reduce(ZERO_REVENUE, BigDecimal::add);
         var byProduct = totals.stream().collect(Collectors.toMap(ShipmentRepository.ProductTotal::getProductId,
                 total -> new Sales(total.getQuantity(), total.getRevenue())));
-        return new Facts(new SalesPeriod(from, to, revenue), byProduct);
+        var shipmentCount = totals.stream().mapToLong(ShipmentRepository.ProductTotal::getShipmentCount).sum();
+        return new Facts(new SalesPeriod(from, to, revenue), byProduct, shipmentCount);
     }
 
     private static LocalDate previousStart(RegionalPlan plan) {
@@ -435,26 +512,49 @@ public class PlanService {
         return plan;
     }
 
+    private RegionalPlan managerPlanForUpdate(Long id, Long version, AppPrincipal actor) {
+        var manager = requireRole(actor, RoleCode.MANAGER);
+        var plan = findPlan(id, true);
+        requireAccess(plan, manager);
+        checkVersion(plan, version);
+        return plan;
+    }
+
     private static boolean editable(RegionalPlan plan) {
         return switch (plan.getStatus()) {
             case IN_PROGRESS, NEEDS_CORRECTION, REVISION -> true;
-            case DRAFT -> plan.getSentToManagerAt() != null;
+            default -> false;
+        };
+    }
+
+    private static boolean awaitingSales(RegionalPlan plan) {
+        return switch (plan.getStatus()) {
+            case AWAITING_SALES_DATA, SALES_REVISION -> true;
             default -> false;
         };
     }
 
     private static boolean canEditParameters(RegionalPlan plan) {
-        return editable(plan) || plan.getStatus() == PlanStatus.DRAFT || plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
+        return editable(plan) || awaitingSales(plan) || plan.getStatus() == PlanStatus.DRAFT || plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
     }
 
     private void requirePendingAnalysis(RegionalPlan plan, AppUser analyst, Long version) {
         requireAccess(plan, analyst);
         checkVersion(plan, version);
-        if (plan.getStatus() != PlanStatus.AWAITING_ANALYSIS) throw invalidStage("План должен быть на анализе");
+        if (plan.getStatus() != PlanStatus.AWAITING_ANALYSIS || plan.getSalesSubmittedAt() == null) {
+            throw invalidStage("Анализ доступен после проверки сведений о продажах");
+        }
     }
 
     private static void requireEditable(RegionalPlan plan) {
         if (!editable(plan)) throw invalidStage("Позиции плана недоступны для редактирования");
+        requireAnalysis(plan);
+    }
+
+    private static void requireAnalysis(RegionalPlan plan) {
+        if (plan.getSalesSubmittedAt() == null || plan.getAnalyticalRecommendation() == null) {
+            throw invalidStage("Для работы с проектом нужны проверенные сведения о продажах и рекомендация аналитика");
+        }
     }
 
     private static void checkVersion(RegionalPlan plan, Long version) {
@@ -475,5 +575,5 @@ public class PlanService {
         return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Проверьте заполнение плана", Map.of(field, message));
     }
 
-    private record Facts(SalesPeriod period, Map<Long, Sales> byProduct) {}
+    private record Facts(SalesPeriod period, Map<Long, Sales> byProduct, long shipmentCount) {}
 }

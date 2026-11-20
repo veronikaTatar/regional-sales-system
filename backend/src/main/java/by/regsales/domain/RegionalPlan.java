@@ -56,6 +56,13 @@ public class RegionalPlan {
 
     private Instant sentToManagerAt;
 
+    private Instant salesSubmittedAt;
+
+    private Long salesShipmentCount;
+
+    @Column(precision = 38, scale = 2)
+    private BigDecimal salesRevenue;
+
     @Column(columnDefinition = "TEXT")
     private String planningComment;
 
@@ -82,6 +89,9 @@ public class RegionalPlan {
 
     @Column(columnDefinition = "MEDIUMTEXT")
     private String validationNote;
+
+    @Column(columnDefinition = "TEXT")
+    private String planningCheck;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
