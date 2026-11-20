@@ -1,27 +1,12 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, ApiError } from '../../api/client'
+import { CalendarPeriodFields, initialPeriod, periodDates } from '../../components/CalendarPeriodFields'
 import { Loading } from '../../components/Loading'
 import { useResource } from '../../hooks/useResource'
 import { AdminDialog } from '../administration/AdminDialog'
 import { formatPeriod, normalizeDecimal } from './planFormat'
 import type { PlanDetail, PlanRegion, PlanSummary } from './types'
-
-type PeriodKind = 'MONTH' | 'QUARTER'
-const minskDate = new Intl.DateTimeFormat('sv-SE', { dateStyle: 'short', timeZone: 'Europe/Minsk' })
-const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-const quarters = ['I квартал', 'II квартал', 'III квартал', 'IV квартал']
-
-function periodDates(year: number, kind: PeriodKind, number: number) {
-  const startMonth = kind === 'MONTH' ? number : (number - 1) * 3 + 1
-  const endMonth = kind === 'MONTH' ? startMonth : startMonth + 2
-  const monthText = (month: number) => String(month).padStart(2, '0')
-  const lastDay = new Date(Date.UTC(year, endMonth, 0)).getUTCDate()
-  return {
-    periodStart: year + '-' + monthText(startMonth) + '-01',
-    periodEnd: year + '-' + monthText(endMonth) + '-' + lastDay,
-  }
-}
 
 export function PlanEditor({ detail, onClose, onSaved }: {
   detail?: PlanDetail
@@ -30,14 +15,11 @@ export function PlanEditor({ detail, onClose, onSaved }: {
 }) {
   const plan = detail?.plan
   const options = useResource<PlanRegion[]>('/plans/options')
-  const [initialYear, initialMonth] = (plan?.periodStart ?? minskDate.format(new Date())).split('-').map(Number)
-  const initialKind = plan && plan.periodStart.slice(0, 7) === plan.periodEnd.slice(0, 7) ? 'MONTH' : 'QUARTER'
-  const initialPeriod = initialKind === 'MONTH' ? initialMonth : Math.ceil(initialMonth / 3)
-  const initialDates = periodDates(initialYear, initialKind, initialPeriod)
-  const fixed = plan && (plan.sentToManagerAt || initialDates.periodStart !== plan.periodStart || initialDates.periodEnd !== plan.periodEnd)
-  const [year, setYear] = useState(String(initialYear))
-  const [kind, setKind] = useState<PeriodKind>(initialKind)
-  const [period, setPeriod] = useState(initialPeriod)
+  const selection = initialPeriod(plan?.periodStart, plan?.periodEnd)
+  const initialDates = periodDates(selection)
+  const assigned = plan?.status === 'AWAITING_ANALYSIS' || !!plan?.sentToManagerAt
+  const fixed = plan && (assigned || initialDates.periodStart !== plan.periodStart || initialDates.periodEnd !== plan.periodEnd)
+  const [period, setPeriod] = useState(selection)
   const [regionId, setRegionId] = useState(plan ? String(plan.regionId) : '')
   const [managerId, setManagerId] = useState(plan?.manager ? String(plan.manager.id) : '')
   const [busy, setBusy] = useState(false)
@@ -52,7 +34,7 @@ export function PlanEditor({ detail, onClose, onSaved }: {
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (busy || !ready) return
-    const sendToManager = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'dispatch'
+    const requestAnalysis = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'analysis'
     const form = new FormData(event.currentTarget)
     const goal = normalizeDecimal(String(form.get('targetRevenue')), 16, 2)
     const budgetText = String(form.get('budgetLimit')).trim()
@@ -63,12 +45,12 @@ export function PlanEditor({ detail, onClose, onSaved }: {
     if (goal === null || Number(goal) <= 0) issues.targetRevenue = 'Введите положительную сумму с точностью до копейки'
     if (budgetText && budget === null) issues.budgetLimit = 'Введите сумму с точностью до копейки'
     if (discountText && (discount === null || Number(discount) > 100)) issues.maxDiscountPercent = 'Введите процент от 0 до 100'
-    if ((sendToManager || plan?.sentToManagerAt) && !managerId) issues.managerId = 'Выберите ответственного менеджера'
+    if ((requestAnalysis || assigned) && !managerId) issues.managerId = 'Выберите ответственного менеджера'
     setFields(issues)
     setError('')
     if (Object.keys(issues).length) return
 
-    const dates = fixed ? { periodStart: plan.periodStart, periodEnd: plan.periodEnd } : periodDates(Number(year), kind, period)
+    const dates = fixed ? { periodStart: plan.periodStart, periodEnd: plan.periodEnd } : periodDates(period)
     setBusy(true)
     try {
       const saved = await api<PlanSummary>(plan ? '/plans/' + plan.id : '/plans', {
@@ -81,7 +63,7 @@ export function PlanEditor({ detail, onClose, onSaved }: {
           budgetLimit: budget,
           maxDiscountPercent: discount,
           planningComment: form.get('planningComment'),
-          sendToManager,
+          requestAnalysis,
           version: plan?.version,
         }),
       })
@@ -95,7 +77,7 @@ export function PlanEditor({ detail, onClose, onSaved }: {
   }
 
   return (
-    <AdminDialog title={plan ? 'Задание менеджеру' : 'Новый региональный план'} busy={busy} onClose={onClose}>
+    <AdminDialog title={plan ? 'Параметры задания' : 'Новый региональный план'} busy={busy} onClose={onClose}>
       <form className="admin-form" onSubmit={event => void save(event)}>
         {error && <div className="alert alert-error" role="alert">{error}</div>}
         {options.error && <div className="alert alert-error" role="alert">
@@ -132,30 +114,7 @@ export function PlanEditor({ detail, onClose, onSaved }: {
               Плановый период
               <input value={formatPeriod(plan.periodStart, plan.periodEnd)} readOnly/>
             </label>
-          ) : <>
-            <label className="admin-field">
-              Год
-              <input name="year" type="number" min="1000" max="9999" step="1" value={year} required
-                onChange={event => setYear(event.target.value)}/>
-            </label>
-            <label className="admin-field">
-              Вид периода
-              <select name="periodKind" value={kind} onChange={event => {
-                setKind(event.target.value as PeriodKind)
-                setPeriod(1)
-              }}>
-                <option value="QUARTER">Квартал</option>
-                <option value="MONTH">Месяц</option>
-              </select>
-            </label>
-            <label className="admin-field admin-field-wide">
-              {kind === 'MONTH' ? 'Месяц' : 'Квартал'}
-              <select name="period" value={period} onChange={event => setPeriod(Number(event.target.value))}>
-                {(kind === 'MONTH' ? months : quarters).map((label, index) => <option key={label} value={index + 1}>{label}</option>)}
-              </select>
-              {(fields.periodStart || fields.periodEnd) && <small className="field-error">{fields.periodStart || fields.periodEnd}</small>}
-            </label>
-          </>}
+          ) : <CalendarPeriodFields value={period} onChange={setPeriod} error={fields.periodStart || fields.periodEnd}/>}
           <label className="admin-field">
             Целевая выручка, BYN
             <input name="targetRevenue" inputMode="decimal" maxLength={19} defaultValue={plan?.targetRevenue ?? ''} required
@@ -183,11 +142,11 @@ export function PlanEditor({ detail, onClose, onSaved }: {
         </fieldset>}
         <footer className="admin-dialog-actions">
           <button type="button" className="button button-secondary" onClick={onClose} disabled={busy}>Отмена</button>
-          <button type="submit" className={'button ' + (plan?.sentToManagerAt ? 'button-primary' : 'button-secondary')} disabled={busy || !ready}>
-            {plan?.sentToManagerAt ? 'Сохранить изменения' : 'Сохранить черновик'}
+          <button type="submit" className={'button ' + (assigned ? 'button-primary' : 'button-secondary')} disabled={busy || !ready}>
+            {assigned ? 'Сохранить изменения' : 'Сохранить черновик'}
           </button>
-          {!plan?.sentToManagerAt && <button type="submit" value="dispatch" className="button button-primary" disabled={busy || !ready}>
-            Передать менеджеру
+          {!assigned && <button type="submit" value="analysis" className="button button-primary" disabled={busy || !ready}>
+            Передать аналитику
           </button>}
         </footer>
       </form>

@@ -2,7 +2,7 @@ import { ArrowRight, Check, CheckCircle2, Clock3, Database, Fingerprint, LockKey
 import { Link } from 'react-router-dom'
 import { useAuth } from '../features/auth/AuthContext'
 import { PlanAttention } from '../features/plans/PlanAttention'
-import { pages, planRoles } from '../components/navigation'
+import { pages, planDetailRoles } from '../components/navigation'
 import type { PageDefinition } from '../components/navigation'
 export function PageHeading({ eyebrow, title, subtitle, children }: { eyebrow?: string; title: string; subtitle: string; children?: React.ReactNode }) {
   return <div className="page-heading"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1><p>{subtitle}</p></div>{children}</div>
@@ -15,7 +15,7 @@ export function Dashboard() {
   const available = pages.filter(page => page.roles.includes(user.role) && !['/','/profile'].includes(page.path))
   return <>
     <PageHeading eyebrow="ОБЗОР СИСТЕМЫ" title={`Здравствуйте, ${name}`} subtitle="Добро пожаловать в систему управления региональным сбытом."><span className="status-badge"><span className="live-dot"/>Учётная запись активна</span></PageHeading>
-    {planRoles.includes(user.role) && <PlanAttention/>}
+    {planDetailRoles.includes(user.role) && <PlanAttention/>}
     <section className="welcome-banner"><div><span className="eyebrow light">ВАША РОЛЬ · {user.roleName.toUpperCase()}</span><h2>Всё начинается<br/>с общей картины.</h2><p>{roleDescriptions[user.role]}</p><Link to="/profile" className="banner-link">Открыть профиль<ArrowRight size={17}/></Link></div><div className="welcome-art" aria-hidden="true"><div className="art-ring ring-one"/><div className="art-ring ring-two"/><div className="art-ring ring-three"/><MapPinned size={64} strokeWidth={1}/><span className="art-label">РЕСПУБЛИКА БЕЛАРУСЬ</span></div></section>
     <div className="section-title"><h2>Основа для вашей работы</h2><span>Первый этап</span></div>
     <div className="foundation-grid">{[{icon:ShieldCheck,title:'Безопасный доступ',text:'Логин, пароль и Google. Полномочия проверяются на сервере.'},{icon:Database,title:'Единая база данных',text:'Модель продукции, регионов, статистики и планирования.'},{icon:UserRound,title:'Ваша учётная запись',text:'Профиль сотрудника и доступ в соответствии с назначенной ролью.'}].map(card=><article className="foundation-card" key={card.title}><span className="card-icon"><card.icon size={22}/></span><h3>{card.title}</h3><p>{card.text}</p></article>)}</div>

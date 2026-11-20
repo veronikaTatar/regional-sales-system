@@ -1,0 +1,143 @@
+.analysis-section {
+  margin-block: 16px;
+}
+
+.mini-status.analysis-source-label {
+  color: #735123;
+  background: #fcf1da;
+}
+
+.analysis-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.analysis-weights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.analysis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.analysis-actions-end {
+  justify-content: flex-end;
+}
+
+.analysis-form-alert {
+  margin: 0;
+}
+
+.analysis-weight-total,
+.analysis-author,
+.analysis-method-note {
+  color: #546d79;
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.analysis-author {
+  margin-top: 9px;
+}
+
+.plan-parameters .analysis-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 9px;
+}
+
+.analysis-metrics > div {
+  padding: 11px 13px;
+  background: #f5f8f8;
+  border-radius: 6px;
+}
+
+.analysis-metrics dd {
+  font-size: 16px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.product-table.analysis-ranking {
+  min-width: 720px;
+}
+
+.analysis-ranking tbody th {
+  padding: 13px 15px;
+  text-align: left;
+  background: transparent;
+  color: var(--ink);
+  font-size: inherit;
+}
+
+.analysis-selected-region {
+  background: #eef8f4;
+}
+
+.analysis-index-cell {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-index-track {
+  display: inline-flex;
+  width: 60px;
+  height: 6px;
+  margin-right: 9px;
+  overflow: hidden;
+  vertical-align: middle;
+  border-radius: 8px;
+  background: #e8efed;
+}
+
+.analysis-index-track > span {
+  background: var(--teal);
+  border-radius: inherit;
+}
+
+.analysis-method-note {
+  padding: 12px 20px;
+}
+
+.analysis-inline-note {
+  padding: 0;
+  margin-top: 10px;
+}
+
+.analysis-detail-link {
+  display: inline-block;
+  margin-top: 9px;
+}
+
+.analysis-period-form {
+  max-width: 510px;
+}
+
+.analysis-period-form .button {
+  margin-top: 14px;
+}
+
+.analysis-scenario-picker {
+  max-width: 430px;
+}
+
+.analysis-history-text {
+  max-width: 650px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.analysis-report-filter {
+  max-width: 100%;
+}

@@ -2,7 +2,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { useAuth } from './features/auth/AuthContext'
 import { Loading } from './components/Loading'
 import { Layout } from './components/Layout'
-import { pages, planRoles, priceHistoryPage } from './components/navigation'
+import { pages, planDetailRoles, priceHistoryPage } from './components/navigation'
 import { AuthPage } from './pages/AuthPage'
 import { Dashboard, ForbiddenPage, NotFoundPage, PlaceholderPage, ProfilePage } from './pages/WorkspacePages'
 import { RegionsPage } from './pages/CatalogPages'
@@ -12,8 +12,12 @@ import { ShipmentsPage } from './pages/ShipmentsPage'
 import { PlansPage } from './pages/PlansPage'
 import { PlanDetailPage } from './pages/PlanDetailPage'
 import { AdministrationPage } from './pages/AdministrationPage'
+import { AnalyticsPage } from './pages/AnalyticsPage'
+import { ReportsPage } from './pages/ReportsPage'
+import { StatisticsPage } from './pages/StatisticsPage'
 import type { Role } from './types'
 import './features/plans/plans.css'
+import './features/analytics/analytics.css'
 function RequireAuth() {
   const { user } = useAuth()
   const location = useLocation()
@@ -29,7 +33,8 @@ export function App() {
   const content: Record<string,React.ReactNode> = {
     '/': <Dashboard/>, '/profile': <ProfilePage/>, '/products': <ProductsPage/>, '/regions': <RegionsPage/>,
     '/shipments': <ShipmentsPage/>, '/administration': <AdministrationPage/>,
-    '/plans': <PlansPage/>, '/approvals': <PlansPage reviewOnly/>,
+    '/plans': <PlansPage/>, '/approvals': <PlansPage mode="review"/>, '/purchasing-power': <PlansPage mode="analysis"/>,
+    '/statistics': <StatisticsPage/>, '/analytics': <AnalyticsPage/>, '/recommendations': <AnalyticsPage history/>, '/reports': <ReportsPage/>,
   }
   return (
     <Routes>
@@ -40,7 +45,7 @@ export function App() {
           {pages.map(page => <Route key={page.path} path={page.path}
             element={<RoleGuard roles={page.roles}>{content[page.path] ?? <PlaceholderPage page={page}/>}</RoleGuard>}/>)}
           <Route path={priceHistoryPage.path} element={<RoleGuard roles={priceHistoryPage.roles}><PriceHistoryPage/></RoleGuard>}/>
-          <Route path="/plans/:id" element={<RoleGuard roles={planRoles}><PlanDetailPage/></RoleGuard>}/>
+          <Route path="/plans/:id" element={<RoleGuard roles={planDetailRoles}><PlanDetailPage/></RoleGuard>}/>
           <Route path="*" element={<NotFoundPage/>}/>
         </Route>
       </Route>

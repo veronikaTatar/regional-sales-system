@@ -1,7 +1,14 @@
 package by.regsales.planning;
 
+import by.regsales.analytics.AnalyticsDtos.Estimate;
+import by.regsales.analytics.AnalyticsDtos.PreviewInput;
+import by.regsales.analytics.AnalyticsDtos.PublishInput;
+import by.regsales.analytics.AnalyticsDtos.Recommendation;
+import by.regsales.analytics.AnalyticsService;
+import by.regsales.analytics.PurchasingPowerCalculator;
 import by.regsales.catalog.RegionScopeService;
 import by.regsales.common.ApiException;
+import by.regsales.common.CalendarPeriod;
 import by.regsales.domain.AppUser;
 import by.regsales.domain.PlanItem;
 import by.regsales.domain.PlanStatus;
@@ -58,6 +65,7 @@ public class PlanService {
     private final ProductRepository products;
     private final ProductPriceRepository prices;
     private final ShipmentRepository shipments;
+    private final AnalyticsService analytics;
 
     public List<RegionChoice> options(AppPrincipal actor) {
         requireRole(actor, RoleCode.SALES_HEAD);
@@ -70,18 +78,37 @@ public class PlanService {
     }
 
     public List<Summary> list(AppPrincipal actor, boolean attention) {
+        return summarize(visiblePlans(account(actor), attention));
+    }
+
+    public List<Result> results(AppPrincipal actor) {
         var user = account(actor);
-        List<RegionalPlan> visible;
-        if (user.getRole().getCode() == RoleCode.SALES_HEAD) {
-            visible = attention ? plans.findByStatusOrderByPeriodStartDescIdDesc(PlanStatus.IN_REVIEW)
+        var approved = user.getRole().getCode() == RoleCode.MANAGER
+                ? visiblePlans(user, false).stream().filter(plan -> plan.getStatus() == PlanStatus.APPROVED).toList()
+                : plans.findByStatusOrderByPeriodStartDescIdDesc(PlanStatus.APPROVED);
+        if (approved.isEmpty()) return List.of();
+        var facts = shipments.factByPlan(approved.stream().map(RegionalPlan::getId).toList()).stream()
+                .collect(Collectors.toMap(ShipmentRepository.PlanTotal::getPlanId, ShipmentRepository.PlanTotal::getRevenue));
+        return summarize(approved).stream().map(plan -> new Result(plan, facts.getOrDefault(plan.id(), ZERO_REVENUE))).toList();
+    }
+
+    private List<RegionalPlan> visiblePlans(AppUser user, boolean attention) {
+        return switch (user.getRole().getCode()) {
+            case SALES_HEAD -> attention ? plans.findByStatusOrderByPeriodStartDescIdDesc(PlanStatus.IN_REVIEW)
                     : plans.findAllByOrderByPeriodStartDescIdDesc();
-        } else {
-            var regionIds = regionScope.accessibleRegions(user).stream().map(Region::getId).toList();
-            if (regionIds.isEmpty()) return List.of();
-            visible = plans.findByAssignedManagerIdAndRegionIdInAndSentToManagerAtIsNotNullOrderByPeriodStartDescIdDesc(
-                    user.getId(), regionIds);
-            if (attention) visible = visible.stream().filter(PlanService::editable).toList();
-        }
+            case ANALYST -> plans.findByStatusOrderByPeriodStartDescIdDesc(PlanStatus.AWAITING_ANALYSIS);
+            case MANAGER -> {
+                var regionIds = regionScope.accessibleRegions(user).stream().map(Region::getId).toList();
+                if (regionIds.isEmpty()) yield List.of();
+                var visible = plans.findByAssignedManagerIdAndRegionIdInAndSentToManagerAtIsNotNullOrderByPeriodStartDescIdDesc(
+                        user.getId(), regionIds);
+                yield attention ? visible.stream().filter(PlanService::editable).toList() : visible;
+            }
+            default -> throw new AccessDeniedException("Доступ к планам ограничен");
+        };
+    }
+
+    private List<Summary> summarize(List<RegionalPlan> visible) {
         if (visible.isEmpty()) return List.of();
         var revenue = items.revenueByPlan(visible.stream().map(RegionalPlan::getId).toList()).stream()
                 .collect(Collectors.toMap(PlanItemRepository.RevenueTotal::getPlanId, PlanItemRepository.RevenueTotal::getRevenue));
@@ -93,7 +120,9 @@ public class PlanService {
         var plan = findPlan(id, false);
         requireAccess(plan, user);
         var head = user.getRole().getCode() == RoleCode.SALES_HEAD;
-        var canEditItems = !head && editable(plan);
+        var canEditItems = user.getRole().getCode() == RoleCode.MANAGER && editable(plan);
+        var canAnalyze = user.getRole().getCode() == RoleCode.ANALYST && plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
+        var recommendation = analytics.recommendation(plan);
         var saved = items.findByRegionalPlanIdOrderByProductNameAscIdAsc(id);
         var previousEnd = plan.getPeriodStart().minusDays(1);
         var previous = facts(plan, previousStart(plan), previousEnd);
@@ -110,8 +139,8 @@ public class PlanService {
         return new Detail(Summary.from(plan, revenue), plan.getBudgetLimit(), plan.getMaxDiscountPercent(),
                 plan.getPlanningComment(), plan.getReviewComment(),
                 plan.getApprovedByUser() == null ? null : plan.getApprovedByUser().getFullName(), plan.getApprovedAt(),
-                head && editable(plan), canEditItems, head && plan.getStatus() == PlanStatus.IN_REVIEW,
-                lines, canEditItems ? offers(plan.getPeriodStart()) : List.of(),
+                head && canEditParameters(plan), canEditItems, head && plan.getStatus() == PlanStatus.IN_REVIEW,
+                canAnalyze, recommendation, lines, canEditItems ? offers(plan, recommendation) : List.of(),
                 previous.period(), actual == null ? null : actual.period());
     }
 
@@ -129,8 +158,35 @@ public class PlanService {
         requireRole(actor, RoleCode.SALES_HEAD);
         var plan = findPlan(id, true);
         checkVersion(plan, input.version());
-        requireEditable(plan);
+        if (!canEditParameters(plan)) throw invalidStage("Параметры плана недоступны для редактирования");
         applyParameters(plan, input);
+        plans.saveAndFlush(plan);
+        return summary(plan);
+    }
+
+    public Estimate previewAnalysis(Long id, PreviewInput input, AppPrincipal actor) {
+        var analyst = requireRole(actor, RoleCode.ANALYST);
+        var plan = findPlan(id, false);
+        requirePendingAnalysis(plan, analyst, input.version());
+        return analytics.estimate(plan, input.weights());
+    }
+
+    @Transactional
+    public Summary publishAnalysis(Long id, PublishInput input, AppPrincipal actor) {
+        var analyst = requireRole(actor, RoleCode.ANALYST);
+        var plan = findPlan(id, true);
+        requirePendingAnalysis(plan, analyst, input.version());
+        if (!eligibleOnRegion(plan.getAssignedManager(), plan.getRegion().getId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "MANAGER_UNAVAILABLE",
+                    "Руководителю нужно выбрать менеджера с действующим назначением на регион");
+        }
+        var recommendation = analytics.publish(plan, input, analyst);
+        plan.setAnalyticalRecommendation(recommendation);
+        plan.setPurchasingPowerCalculation(recommendation.getPurchasingPowerCalculation());
+        var now = Instant.now();
+        plan.setStatus(PlanStatus.DRAFT);
+        plan.setSentToManagerAt(now);
+        plan.setUpdatedAt(now);
         plans.saveAndFlush(plan);
         return summary(plan);
     }
@@ -193,27 +249,28 @@ public class PlanService {
     }
 
     private void applyParameters(RegionalPlan plan, Input input) {
+        var awaitingAnalysis = plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
+        var assigned = awaitingAnalysis || plan.getSentToManagerAt() != null;
         boolean identityChanged = plan.getRegion() == null || !plan.getRegion().getId().equals(input.regionId())
                 || !Objects.equals(plan.getPeriodStart(), input.periodStart()) || !Objects.equals(plan.getPeriodEnd(), input.periodEnd());
         if (identityChanged) {
-            if (plan.getSentToManagerAt() != null) throw invalidStage("Регион и период уже переданного плана закреплены");
-            validatePeriod(input.periodStart(), input.periodEnd());
+            if (assigned) throw invalidStage("Регион и период уже переданного плана закреплены");
+            var period = new CalendarPeriod(input.periodStart(), input.periodEnd());
             var region = regions.findById(input.regionId()).filter(Region::isActive)
                     .orElseThrow(() -> fieldError("regionId", "Выберите действующий регион"));
-            if (plans.findByRegionIdAndPeriodStartAndPeriodEnd(region.getId(), input.periodStart(), input.periodEnd())
+            if (plans.findByRegionIdAndPeriodStartAndPeriodEnd(region.getId(), period.start(), period.end())
                     .filter(existing -> !existing.getId().equals(plan.getId())).isPresent()) {
                 throw new ApiException(HttpStatus.CONFLICT, "PLAN_EXISTS", "План для этого региона и периода уже существует");
             }
             plan.setRegion(region);
-            plan.setPeriodStart(input.periodStart());
-            plan.setPeriodEnd(input.periodEnd());
+            plan.setPeriodStart(period.start());
+            plan.setPeriodEnd(period.end());
         }
 
         var manager = input.managerId() == null ? null : users.findById(input.managerId())
-                .filter(user -> user.isActive() && user.getRole().getCode() == RoleCode.MANAGER)
-                .filter(user -> assignments.hasActiveAssignment(user.getId(), input.regionId(), LocalDate.now(MINSK)))
+                .filter(user -> eligibleOnRegion(user, input.regionId()))
                 .orElseThrow(() -> fieldError("managerId", "Выберите менеджера с действующим назначением на регион"));
-        if (manager == null && (input.sendToManager() || plan.getSentToManagerAt() != null)) {
+        if (manager == null && (input.requestAnalysis() || assigned)) {
             throw fieldError("managerId", "Выберите ответственного менеджера");
         }
         var now = Instant.now();
@@ -223,7 +280,15 @@ public class PlanService {
         plan.setMaxDiscountPercent(input.maxDiscountPercent());
         plan.setPlanningComment(input.planningComment());
         plan.setUpdatedAt(now);
-        if (input.sendToManager() && plan.getSentToManagerAt() == null) plan.setSentToManagerAt(now);
+        if (input.requestAnalysis() && !assigned) {
+            analytics.requireStatisticsFor(plan);
+            plan.setStatus(PlanStatus.AWAITING_ANALYSIS);
+        }
+    }
+
+    private boolean eligibleOnRegion(AppUser manager, Long regionId) {
+        return manager != null && manager.isActive() && manager.getRole().getCode() == RoleCode.MANAGER
+                && assignments.hasActiveAssignment(manager.getId(), regionId, LocalDate.now(MINSK));
     }
 
     private static void validateItems(List<LineInput> lines, Map<Long, PlanItem> stored, Map<Long, Product> catalog) {
@@ -245,17 +310,20 @@ public class PlanService {
         if (!errors.isEmpty()) throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Проверьте позиции плана", errors);
     }
 
-    private List<Offer> offers(LocalDate date) {
+    private List<Offer> offers(RegionalPlan plan, Recommendation recommendation) {
         var active = products.findAllByActiveTrueOrderByNameAsc();
         if (active.isEmpty()) return List.of();
+        var date = plan.getPeriodStart();
         var byProduct = prices.intersecting(active.stream().map(Product::getId).toList(), date, date).stream()
                 .collect(Collectors.toMap(price -> price.getProduct().getId(), Function.identity(),
                         (left, right) -> left.getValidFrom().isAfter(right.getValidFrom()) ? left : right));
         return active.stream().map(product -> {
             ProductPrice price = byProduct.get(product.getId());
-            return new Offer(product.getId(), product.getSku(), product.getName(), product.getUnit(),
-                    price == null ? product.getCurrentPrice() : price.getUnitPrice(), price != null,
-                    price == null ? null : price.getPriceListCode());
+            var base = price == null ? product.getCurrentPrice() : price.getUnitPrice();
+            var suggested = recommendation == null ? null : PurchasingPowerCalculator.suggestedPrice(
+                    base, recommendation.priceAdjustmentPercent(), plan.getMaxDiscountPercent());
+            return new Offer(product.getId(), product.getSku(), product.getName(), product.getUnit(), base,
+                    price != null, price == null ? null : price.getPriceListCode(), suggested);
         }).toList();
     }
 
@@ -288,7 +356,7 @@ public class PlanService {
             throw new AccessDeniedException("Учётная запись недоступна");
         }
         var role = user.getRole().getCode();
-        if (role != RoleCode.MANAGER && role != RoleCode.SALES_HEAD) throw new AccessDeniedException("Доступ к планам ограничен");
+        if (role == RoleCode.ADMIN) throw new AccessDeniedException("Доступ к планам ограничен");
         return user;
     }
 
@@ -300,6 +368,11 @@ public class PlanService {
 
     private void requireAccess(RegionalPlan plan, AppUser user) {
         if (user.getRole().getCode() == RoleCode.SALES_HEAD) return;
+        if (user.getRole().getCode() == RoleCode.ANALYST) {
+            if (plan.getStatus() == PlanStatus.AWAITING_ANALYSIS || plan.getStatus() == PlanStatus.APPROVED
+                    || plan.getAnalyticalRecommendation() != null) return;
+            throw notFound();
+        }
         if (plan.getSentToManagerAt() == null || plan.getAssignedManager() == null
                 || !plan.getAssignedManager().getId().equals(user.getId())) throw notFound();
         regionScope.requireRegionAccess(user, plan.getRegion().getId());
@@ -313,6 +386,16 @@ public class PlanService {
         return plan.getStatus() == PlanStatus.DRAFT || plan.getStatus() == PlanStatus.REVISION;
     }
 
+    private static boolean canEditParameters(RegionalPlan plan) {
+        return editable(plan) || plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
+    }
+
+    private void requirePendingAnalysis(RegionalPlan plan, AppUser analyst, Long version) {
+        requireAccess(plan, analyst);
+        checkVersion(plan, version);
+        if (plan.getStatus() != PlanStatus.AWAITING_ANALYSIS) throw invalidStage("План должен быть на анализе");
+    }
+
     private static void requireEditable(RegionalPlan plan) {
         if (!editable(plan)) throw invalidStage("Изменять можно черновик или план на доработке");
     }
@@ -321,15 +404,6 @@ public class PlanService {
         if (version == null || version != plan.getVersion()) {
             throw new ApiException(HttpStatus.CONFLICT, "PLAN_CHANGED", "План изменился. Обновите карточку и повторите действие");
         }
-    }
-
-    private static void validatePeriod(LocalDate from, LocalDate to) {
-        if (from.getYear() < 1000 || to.getYear() > 9999 || from.getDayOfMonth() != 1) {
-            throw fieldError("periodStart", "Выберите календарный месяц или квартал");
-        }
-        boolean month = to.equals(from.plusMonths(1).minusDays(1));
-        boolean quarter = (from.getMonthValue() - 1) % 3 == 0 && to.equals(from.plusMonths(3).minusDays(1));
-        if (!month && !quarter) throw fieldError("periodEnd", "Выберите календарный месяц или квартал");
     }
 
     private static ApiException notFound() {

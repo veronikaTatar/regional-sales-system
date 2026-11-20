@@ -52,6 +52,15 @@
   color: #2c5c80;
 }
 
+.mini-status.plan-status-awaiting_analysis {
+  background: #e9eff9;
+  color: #3e5c83;
+}
+
+.plan-suggested-price .cell-secondary {
+  color: #35685c;
+}
+
 .mini-status.plan-status-revision {
   background: #fcf2df;
   color: #805320;

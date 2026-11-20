@@ -57,7 +57,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PUT, "/api/products/*").hasRole("MANAGER")
                 .requestMatchers(HttpMethod.POST, "/api/shipments", "/api/shipments/import").hasRole("MANAGER")
                 .requestMatchers("/api/shipments", "/api/shipments/**").hasAnyRole("MANAGER", "ANALYST", "SALES_HEAD")
-                .requestMatchers("/api/plans", "/api/plans/**").hasAnyRole("MANAGER", "SALES_HEAD")
+                .requestMatchers("/api/analytics/**").hasAnyRole("ANALYST", "SALES_HEAD")
+                .requestMatchers("/api/plans", "/api/plans/**").hasAnyRole("MANAGER", "ANALYST", "SALES_HEAD")
                 .anyRequest().authenticated())
             .exceptionHandling(e->e
                 .authenticationEntryPoint((request,response,error)->{response.setStatus(401);response.setContentType("application/json;charset=UTF-8");mapper.writeValue(response.getWriter(),new ApiError("UNAUTHORIZED","Войдите в систему"));})

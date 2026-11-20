@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { ArrowLeft, Check, Pencil, Undo2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { Loading } from '../components/Loading'
+import { PlanRecommendation } from '../features/analytics/AnalysisResults'
+import { PlanAnalysisForm } from '../features/analytics/PlanAnalysisForm'
+import { useAuth } from '../features/auth/AuthContext'
 import { PlanEditor } from '../features/plans/PlanEditor'
 import { PlanItemsEditor } from '../features/plans/PlanItemsEditor'
 import { PlanReviewDialog } from '../features/plans/PlanReviewDialog'
@@ -14,10 +17,13 @@ const approvalDate = new Intl.DateTimeFormat('ru-BY', { timeZone: 'Europe/Minsk'
 
 export function PlanDetailPage() {
   const { id } = useParams()
+  const { user } = useAuth()
   const { data: detail, error, loading, refresh } = useResource<PlanDetail>('/plans/' + id)
   const [dialog, setDialog] = useState<'EDIT' | 'APPROVE' | 'RETURN' | null>(null)
   const [notice, setNotice] = useState('')
-  const back = <Link to="/plans" className="button button-secondary"><ArrowLeft size={16} aria-hidden="true"/>К планам</Link>
+  const analyst = user?.role === 'ANALYST'
+  const back = <Link to={analyst ? '/purchasing-power' : '/plans'} className="button button-secondary">
+    <ArrowLeft size={16} aria-hidden="true"/>{analyst ? 'К заданиям' : 'К планам'}</Link>
 
   if (error) return <>
     <PageHeading title="Региональный план" subtitle="Карточка плана продаж">{back}</PageHeading>
@@ -33,8 +39,9 @@ export function PlanDetailPage() {
     setDialog(null)
     if (saved.status === 'APPROVED') setNotice('План утверждён.')
     else if (saved.status === 'IN_REVIEW') setNotice('План передан на проверку.')
+    else if (saved.status === 'AWAITING_ANALYSIS' && plan.status !== 'AWAITING_ANALYSIS') setNotice('Задание передано аналитику.')
     else if (dialog === 'RETURN') setNotice('План возвращён менеджеру на доработку.')
-    else if (saved.sentToManagerAt && !plan.sentToManagerAt) setNotice('Задание передано менеджеру.')
+    else if (saved.sentToManagerAt && !plan.sentToManagerAt) setNotice('Рекомендация сохранена. Задание передано менеджеру.')
     else setNotice(dialog === 'EDIT' ? 'Параметры плана сохранены.' : 'Позиции плана сохранены.')
     await refresh()
   }
@@ -94,7 +101,9 @@ export function PlanDetailPage() {
         <small>{formatPeriod(detail.actual.from, detail.actual.to)}</small></article>}
     </div>
 
-    <section className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
+    {detail.recommendation && <PlanRecommendation recommendation={detail.recommendation} linkToCalculation={user?.role !== 'MANAGER'}/>}
+    {detail.canAnalyze ? <PlanAnalysisForm key={plan.id + '-' + plan.version} plan={plan} onSaved={onSaved} onReload={refresh}/>
+    : <section className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
       {detail.canEditItems ? (
         <PlanItemsEditor key={plan.id + '-' + plan.version} detail={detail} onSaved={onSaved}/>
       ) : <>
@@ -124,9 +133,10 @@ export function PlanDetailPage() {
               </tbody>
             </table>
           </div>
-        ) : <p className="plan-empty-inline">Менеджер ещё не добавил позиции в этот план.</p>}
+        ) : <p className="plan-empty-inline">{plan.status === 'AWAITING_ANALYSIS'
+          ? 'Менеджер получит задание после публикации рекомендации.' : 'Менеджер ещё не добавил позиции в этот план.'}</p>}
       </>}
-    </section>
+    </section>}
     {dialog === 'EDIT' && detail.canEditParameters && <PlanEditor detail={detail} onClose={() => setDialog(null)} onSaved={onSaved}/>}
     {detail.canReview && (dialog === 'APPROVE' || dialog === 'RETURN') && (
       <PlanReviewDialog plan={plan} decision={dialog} onClose={() => setDialog(null)} onSaved={onSaved}/>

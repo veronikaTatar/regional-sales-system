@@ -44,6 +44,9 @@ public class PurchasingPowerCalculation {
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    @Column(columnDefinition = "TEXT")
+    private String inputSnapshot;
+
     @PrePersist
     void initializeTimestamp() {
         if (calculatedAt == null) calculatedAt = Instant.now();

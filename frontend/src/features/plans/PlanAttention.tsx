@@ -4,6 +4,14 @@ import { useResource } from '../../hooks/useResource'
 import { formatPeriod } from './planFormat'
 import type { PlanSummary } from './types'
 
+const tasks = {
+  DRAFT: 'Заполнить план',
+  AWAITING_ANALYSIS: 'Подготовить анализ',
+  IN_REVIEW: 'Проверить план',
+  REVISION: 'Доработать план',
+  APPROVED: 'Открыть план',
+}
+
 export function PlanAttention() {
   const { data, error, refresh } = useResource<PlanSummary[]>('/plans?attention=true')
   if (error) return <div className="alert alert-error" role="alert">
@@ -22,7 +30,7 @@ export function PlanAttention() {
             <Link to={'/plans/' + plan.id}>
               <span className="card-icon"><ClipboardList size={17} aria-hidden="true"/></span>
               <span>
-                <strong>{plan.status === 'IN_REVIEW' ? 'Проверить план' : plan.status === 'REVISION' ? 'Доработать план' : 'Заполнить план'}</strong>
+                <strong>{tasks[plan.status]}</strong>
                 <small>{plan.regionName} · {formatPeriod(plan.periodStart, plan.periodEnd)}</small>
               </span>
               <ArrowRight size={16} aria-hidden="true"/>
@@ -30,8 +38,9 @@ export function PlanAttention() {
           </li>
         ))}
       </ul>
-      {data.length > 5 && <Link className="text-button plan-all-tasks" to={data[0].status === 'IN_REVIEW' ? '/approvals' : '/plans'}>
-        Открыть список планов
+      {data.length > 5 && <Link className="text-button plan-all-tasks" to={data[0].status === 'IN_REVIEW' ? '/approvals'
+        : data[0].status === 'AWAITING_ANALYSIS' ? '/purchasing-power' : '/plans'}>
+        Открыть список заданий
       </Link>}
     </section>
   )

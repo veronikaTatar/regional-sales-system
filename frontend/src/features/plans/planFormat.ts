@@ -3,6 +3,7 @@ import type { PlanStatus, PlanSummary } from './types'
 
 export const planStatusLabels: Record<PlanStatus, string> = {
   DRAFT: 'Черновик',
+  AWAITING_ANALYSIS: 'На анализе',
   IN_REVIEW: 'На проверке',
   REVISION: 'На доработке',
   APPROVED: 'Утверждён',

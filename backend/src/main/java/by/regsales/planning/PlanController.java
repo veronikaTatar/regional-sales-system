@@ -1,5 +1,8 @@
 package by.regsales.planning;
 
+import by.regsales.analytics.AnalyticsDtos.Estimate;
+import by.regsales.analytics.AnalyticsDtos.PreviewInput;
+import by.regsales.analytics.AnalyticsDtos.PublishInput;
 import by.regsales.security.AppPrincipal;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +18,7 @@ import static by.regsales.planning.PlanDtos.*;
 @RestController
 @RequestMapping("/api/plans")
 @RequiredArgsConstructor
-@PreAuthorize("hasAnyRole('MANAGER', 'SALES_HEAD')")
+@PreAuthorize("hasAnyRole('MANAGER', 'ANALYST', 'SALES_HEAD')")
 public class PlanController {
     private final PlanService plans;
 
@@ -23,6 +26,11 @@ public class PlanController {
     public List<Summary> list(@RequestParam(defaultValue = "false") boolean attention,
                               @AuthenticationPrincipal AppPrincipal actor) {
         return plans.list(actor, attention);
+    }
+
+    @GetMapping("/results")
+    public List<Result> results(@AuthenticationPrincipal AppPrincipal actor) {
+        return plans.results(actor);
     }
 
     @GetMapping("/options")
@@ -48,6 +56,20 @@ public class PlanController {
     public Summary update(@PathVariable Long id, @Valid @RequestBody Input input,
                           @AuthenticationPrincipal AppPrincipal actor) {
         return plans.update(id, input, actor);
+    }
+
+    @PostMapping("/{id}/analysis/preview")
+    @PreAuthorize("hasRole('ANALYST')")
+    public Estimate previewAnalysis(@PathVariable Long id, @Valid @RequestBody PreviewInput input,
+                                    @AuthenticationPrincipal AppPrincipal actor) {
+        return plans.previewAnalysis(id, input, actor);
+    }
+
+    @PutMapping("/{id}/analysis")
+    @PreAuthorize("hasRole('ANALYST')")
+    public Summary publishAnalysis(@PathVariable Long id, @Valid @RequestBody PublishInput input,
+                                   @AuthenticationPrincipal AppPrincipal actor) {
+        return plans.publishAnalysis(id, input, actor);
     }
 
     @PutMapping("/{id}/items")

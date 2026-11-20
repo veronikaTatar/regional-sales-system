@@ -1,8 +1,10 @@
 package by.regsales.planning;
 
+import by.regsales.analytics.AnalyticsDtos.Recommendation;
 import by.regsales.domain.AppUser;
 import by.regsales.domain.PlanStatus;
 import by.regsales.domain.RegionalPlan;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
@@ -33,7 +35,7 @@ public final class PlanDtos {
             @DecimalMin(value = "0", message = "Укажите процент от 0 до 100") @DecimalMax(value = "100", message = "Укажите процент от 0 до 100")
             @Digits(integer = 3, fraction = 2, message = "Укажите процент с точностью до двух знаков") BigDecimal maxDiscountPercent,
             @Size(max = 2000, message = "Комментарий должен содержать до 2000 символов") String planningComment,
-            boolean sendToManager,
+            @JsonAlias("sendToManager") boolean requestAnalysis,
             @PositiveOrZero Long version) {
         public Input {
             targetRevenue = normalize(targetRevenue);
@@ -89,7 +91,8 @@ public final class PlanDtos {
 
     public record Offer(Long productId, String sku, String name, String unit,
                         @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal unitPrice,
-                        boolean fromHistory, String priceListCode) {}
+                        boolean fromHistory, String priceListCode,
+                        @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal suggestedUnitPrice) {}
 
     public record Sales(@JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal quantity,
                         @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal revenue) {}
@@ -106,8 +109,11 @@ public final class PlanDtos {
                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal budgetLimit,
                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal maxDiscountPercent,
                          String planningComment, String reviewComment, String approvedBy, Instant approvedAt,
-                         boolean canEditParameters, boolean canEditItems, boolean canReview,
+                         boolean canEditParameters, boolean canEditItems, boolean canReview, boolean canAnalyze,
+                         Recommendation recommendation,
                          List<Item> items, List<Offer> offers, SalesPeriod previous, SalesPeriod actual) {}
+
+    public record Result(Summary plan, @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal actualRevenue) {}
 
     private static BigDecimal normalize(BigDecimal value) {
         return value == null ? null : value.stripTrailingZeros();

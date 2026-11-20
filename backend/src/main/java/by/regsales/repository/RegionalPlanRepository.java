@@ -20,6 +20,9 @@ public interface RegionalPlanRepository extends JpaRepository<RegionalPlan, Long
     @EntityGraph(attributePaths = {"region", "assignedManager"})
     List<RegionalPlan> findByStatusOrderByPeriodStartDescIdDesc(PlanStatus status);
 
+    @EntityGraph(attributePaths = {"region", "analyticalRecommendation.authorUser", "analyticalRecommendation.purchasingPowerCalculation"})
+    List<RegionalPlan> findByAnalyticalRecommendationIsNotNullOrderByPeriodStartDescIdDesc();
+
     @EntityGraph(attributePaths = {"region", "assignedManager"})
     List<RegionalPlan> findByAssignedManagerIdAndRegionIdInAndSentToManagerAtIsNotNullOrderByPeriodStartDescIdDesc(
             Long managerId, Collection<Long> regionIds);

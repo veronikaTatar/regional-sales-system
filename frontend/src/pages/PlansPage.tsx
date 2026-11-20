@@ -9,18 +9,23 @@ import type { PlanSummary } from '../features/plans/types'
 import { useResource } from '../hooks/useResource'
 import { PageHeading } from './WorkspacePages'
 
-export function PlansPage({ reviewOnly = false }: { reviewOnly?: boolean }) {
+export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'analysis' }) {
   const { user } = useAuth()
-  const plans = useResource<PlanSummary[]>(reviewOnly ? '/plans?attention=true' : '/plans')
+  const plans = useResource<PlanSummary[]>(mode === 'plans' ? '/plans' : '/plans?attention=true')
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
-  const visible = plans.data?.filter(plan => !reviewOnly || plan.status === 'IN_REVIEW') ?? []
+  const expectedStatus = mode === 'analysis' ? 'AWAITING_ANALYSIS' : 'IN_REVIEW'
+  const visible = plans.data?.filter(plan => mode === 'plans' || plan.status === expectedStatus) ?? []
+  const heading = {
+    plans: { title: 'Региональные планы', subtitle: user?.role === 'MANAGER'
+      ? 'Ваши задания и планы продаж по закреплённым регионам.' : 'Задания на анализ и планы продаж по регионам.', list: 'Планы продаж', empty: 'Планов пока нет' },
+    review: { title: 'Согласование планов', subtitle: 'Планы, которые менеджеры передали на проверку.', list: 'На проверке', empty: 'Планов на проверке нет' },
+    analysis: { title: 'Покупательная способность', subtitle: 'Задания на расчёт индекса и подготовку рекомендации.', list: 'Задания на анализ', empty: 'Заданий на анализ пока нет' },
+  }[mode]
 
   return <>
-    <PageHeading eyebrow="ПЛАНИРОВАНИЕ" title={reviewOnly ? 'Согласование планов' : 'Региональные планы'}
-      subtitle={reviewOnly ? 'Планы, которые менеджеры передали на проверку.' : user?.role === 'MANAGER'
-        ? 'Ваши задания и планы продаж по закреплённым регионам.' : 'Задания менеджерам и планы продаж по регионам.'}>
-      {user?.role === 'SALES_HEAD' && !reviewOnly && (
+    <PageHeading eyebrow={mode === 'analysis' ? 'АНАЛИТИКА' : 'ПЛАНИРОВАНИЕ'} title={heading.title} subtitle={heading.subtitle}>
+      {user?.role === 'SALES_HEAD' && mode === 'plans' && (
         <button type="button" className="button button-primary plan-create" onClick={() => setCreating(true)}>
           <Plus size={17} aria-hidden="true"/>Новый план
         </button>
@@ -33,7 +38,7 @@ export function PlansPage({ reviewOnly = false }: { reviewOnly?: boolean }) {
     {plans.data && !plans.error && (
       <section className="panel catalog-panel" aria-labelledby="plan-list-heading" aria-busy={plans.loading}>
         <div className="plan-section-top">
-          <h2 id="plan-list-heading">{reviewOnly ? 'На проверке' : 'Планы продаж'} <span className="count-pill">{visible.length}</span></h2>
+          <h2 id="plan-list-heading">{heading.list} <span className="count-pill">{visible.length}</span></h2>
         </div>
         {visible.length ? (
           <div className="table-scroll">
@@ -55,7 +60,7 @@ export function PlansPage({ reviewOnly = false }: { reviewOnly?: boolean }) {
                   <td className="numeric plan-nowrap">{formatPlanMoney(plan.targetRevenue)}</td>
                   <td className="numeric plan-nowrap">{formatPlanMoney(plan.plannedRevenue)}</td>
                   <td><span className={'mini-status plan-status-' + plan.status.toLowerCase()}>{planStatusLabel(plan)}</span></td>
-                  <td><Link className="text-button" to={'/plans/' + plan.id}>Открыть</Link></td>
+                    <td><Link className="text-button" to={'/plans/' + plan.id}>{mode === 'analysis' ? 'К расчёту' : 'Открыть'}</Link></td>
                 </tr>)}
               </tbody>
             </table>
@@ -63,10 +68,10 @@ export function PlansPage({ reviewOnly = false }: { reviewOnly?: boolean }) {
         ) : (
           <div className="empty-state">
             <ClipboardList size={40} strokeWidth={1.3} aria-hidden="true"/>
-            <h2>{reviewOnly ? 'Планов на проверке нет' : 'Планов пока нет'}</h2>
-            {!reviewOnly && <p>{user?.role === 'MANAGER'
-              ? 'Здесь появятся задания, которые передаст руководитель.'
-              : 'Создайте план для региона и передайте его менеджеру.'}</p>}
+            <h2>{heading.empty}</h2>
+            {mode === 'plans' && <p>{user?.role === 'MANAGER'
+              ? 'Здесь появятся задания с расчётом аналитика.'
+              : 'Создайте план для региона и передайте его аналитику.'}</p>}
           </div>
         )}
       </section>

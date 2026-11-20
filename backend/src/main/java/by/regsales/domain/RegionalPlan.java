@@ -54,6 +54,10 @@ public class RegionalPlan {
     @JoinColumn(name = "purchasing_power_calculation_id")
     private PurchasingPowerCalculation purchasingPowerCalculation;
 
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "analytical_recommendation_id", unique = true)
+    private AnalyticalRecommendation analyticalRecommendation;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by_user_id", nullable = false)
     private AppUser createdByUser;

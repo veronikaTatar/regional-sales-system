@@ -1,4 +1,6 @@
-export type PlanStatus = 'DRAFT' | 'IN_REVIEW' | 'REVISION' | 'APPROVED'
+import type { Recommendation } from '../analytics/types'
+
+export type PlanStatus = 'DRAFT' | 'AWAITING_ANALYSIS' | 'IN_REVIEW' | 'REVISION' | 'APPROVED'
 
 export interface PlanManager {
   id: number
@@ -33,6 +35,7 @@ export interface PlanOffer {
   unitPrice: string
   fromHistory: boolean
   priceListCode: string | null
+  suggestedUnitPrice: string | null
 }
 
 interface Sales {
@@ -69,8 +72,15 @@ export interface PlanDetail {
   canEditParameters: boolean
   canEditItems: boolean
   canReview: boolean
+  canAnalyze: boolean
+  recommendation: Recommendation | null
   items: PlanItem[]
   offers: PlanOffer[]
   previous: SalesPeriod
   actual: SalesPeriod | null
+}
+
+export interface PlanResult {
+  plan: PlanSummary
+  actualRevenue: string
 }

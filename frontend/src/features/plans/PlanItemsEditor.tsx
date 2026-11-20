@@ -110,6 +110,7 @@ export function PlanItemsEditor({ detail, onSaved }: {
               {rows.map((row, index) => {
                 const prefix = 'items[' + index + ']'
                 const offer = offerById.get(row.productId)
+                const suggestedPrice = offer?.suggestedUnitPrice
                 const amount = values[index].amount
                 return (
                   <tr key={row.productId}>
@@ -131,6 +132,12 @@ export function PlanItemsEditor({ detail, onSaved }: {
                       {offer && <small className="cell-secondary">
                         {formatPlanMoney(offer.unitPrice)} · {offer.priceListCode ?? (offer.fromHistory ? 'История цен' : 'Каталог')}
                       </small>}
+                      {suggestedPrice && <div className="plan-suggested-price">
+                        <small className="cell-secondary">Рекомендовано {formatPlanMoney(suggestedPrice)} BYN</small>
+                        {row.plannedUnitPrice !== suggestedPrice.replace('.', ',') && <button type="button"
+                          className="text-button" aria-label={'Применить рекомендованную цену ' + row.sku} disabled={busy}
+                          onClick={() => editRow(row.productId, 'plannedUnitPrice', suggestedPrice.replace('.', ','))}>Применить</button>}
+                      </div>}
                       {fields[prefix + '.plannedUnitPrice'] && <small className="field-error">{fields[prefix + '.plannedUnitPrice']}</small>}
                     </td>
                     <td className="numeric">{amount === null ? '—' : formatCents(amount)}</td>
