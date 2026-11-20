@@ -58,6 +58,19 @@ public class PlanController {
         return plans.update(id, input, actor);
     }
 
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasRole('SALES_HEAD')")
+    public Summary cancel(@PathVariable Long id, @RequestParam Long version, @AuthenticationPrincipal AppPrincipal actor) {
+        return plans.cancel(id, version, actor);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasRole('SALES_HEAD')")
+    public void delete(@PathVariable Long id, @RequestParam Long version, @AuthenticationPrincipal AppPrincipal actor) {
+        plans.delete(id, version, actor);
+    }
+
     @PostMapping("/{id}/analysis/preview")
     @PreAuthorize("hasRole('ANALYST')")
     public Estimate previewAnalysis(@PathVariable Long id, @Valid @RequestBody PreviewInput input,
@@ -77,6 +90,12 @@ public class PlanController {
     public Summary items(@PathVariable Long id, @Valid @RequestBody ItemsInput input,
                          @AuthenticationPrincipal AppPrincipal actor) {
         return plans.saveItems(id, input, actor);
+    }
+
+    @PostMapping("/{id}/withdraw")
+    @PreAuthorize("hasRole('MANAGER')")
+    public Summary withdraw(@PathVariable Long id, @RequestParam Long version, @AuthenticationPrincipal AppPrincipal actor) {
+        return plans.withdraw(id, version, actor);
     }
 
     @PostMapping("/{id}/review")

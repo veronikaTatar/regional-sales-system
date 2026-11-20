@@ -27,7 +27,7 @@ public interface RegionalPlanRepository extends JpaRepository<RegionalPlan, Long
     List<RegionalPlan> findByAssignedManagerIdAndRegionIdInAndSentToManagerAtIsNotNullOrderByPeriodStartDescIdDesc(
             Long managerId, Collection<Long> regionIds);
 
-    Optional<RegionalPlan> findByRegionIdAndPeriodStartAndPeriodEnd(Long regionId, LocalDate from, LocalDate to);
+    boolean existsByRegionIdAndPeriodStartAndPeriodEndAndStatusNot(Long regionId, LocalDate from, LocalDate to, PlanStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select plan from RegionalPlan plan where plan.id = :id")

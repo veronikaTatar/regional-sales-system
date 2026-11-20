@@ -26,6 +26,7 @@ import by.regsales.repository.RegionRepository;
 import by.regsales.repository.RegionalPlanRepository;
 import by.regsales.repository.ShipmentRepository;
 import by.regsales.security.AppPrincipal;
+import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
@@ -66,6 +67,7 @@ public class PlanService {
     private final ProductPriceRepository prices;
     private final ShipmentRepository shipments;
     private final AnalyticsService analytics;
+    private final Validator validator;
 
     public List<RegionChoice> options(AppPrincipal actor) {
         requireRole(actor, RoleCode.SALES_HEAD);
@@ -120,7 +122,9 @@ public class PlanService {
         var plan = findPlan(id, false);
         requireAccess(plan, user);
         var head = user.getRole().getCode() == RoleCode.SALES_HEAD;
-        var canEditItems = user.getRole().getCode() == RoleCode.MANAGER && editable(plan);
+        var manager = user.getRole().getCode() == RoleCode.MANAGER;
+        var onReview = plan.getStatus() == PlanStatus.IN_REVIEW;
+        var canEditItems = manager && editable(plan);
         var canAnalyze = user.getRole().getCode() == RoleCode.ANALYST && plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
         var recommendation = analytics.recommendation(plan);
         var saved = items.findByRegionalPlanIdOrderByProductNameAscIdAsc(id);
@@ -139,8 +143,8 @@ public class PlanService {
         return new Detail(Summary.from(plan, revenue), plan.getBudgetLimit(), plan.getMaxDiscountPercent(),
                 plan.getPlanningComment(), plan.getReviewComment(),
                 plan.getApprovedByUser() == null ? null : plan.getApprovedByUser().getFullName(), plan.getApprovedAt(),
-                head && canEditParameters(plan), canEditItems, head && plan.getStatus() == PlanStatus.IN_REVIEW,
-                canAnalyze, recommendation, lines, canEditItems ? offers(plan, recommendation) : List.of(),
+                head && canEditParameters(plan), canEditItems, head && onReview, canAnalyze, manager && onReview,
+                recommendation, lines, canEditItems ? offers(plan, recommendation) : List.of(),
                 previous.period(), actual == null ? null : actual.period());
     }
 
@@ -155,13 +159,31 @@ public class PlanService {
 
     @Transactional
     public Summary update(Long id, Input input, AppPrincipal actor) {
-        requireRole(actor, RoleCode.SALES_HEAD);
-        var plan = findPlan(id, true);
-        checkVersion(plan, input.version());
+        var plan = headPlanForUpdate(id, input.version(), actor);
         if (!canEditParameters(plan)) throw invalidStage("Параметры плана недоступны для редактирования");
         applyParameters(plan, input);
         plans.saveAndFlush(plan);
         return summary(plan);
+    }
+
+    @Transactional
+    public Summary cancel(Long id, Long version, AppPrincipal actor) {
+        var plan = headPlanForUpdate(id, version, actor);
+        if (plan.getStatus() == PlanStatus.APPROVED || plan.getStatus() == PlanStatus.CANCELLED) {
+            throw invalidStage("Отменить можно только активный неутверждённый план");
+        }
+        plan.setStatus(PlanStatus.CANCELLED);
+        plan.setUpdatedAt(Instant.now());
+        plans.saveAndFlush(plan);
+        return summary(plan);
+    }
+
+    @Transactional
+    public void delete(Long id, Long version, AppPrincipal actor) {
+        var plan = headPlanForUpdate(id, version, actor);
+        if (plan.getStatus() == PlanStatus.APPROVED) throw invalidStage("Утверждённый план защищён от удаления");
+        items.deleteForPlan(id);
+        plans.delete(plan);
     }
 
     public Estimate previewAnalysis(Long id, PreviewInput input, AppPrincipal actor) {
@@ -184,7 +206,7 @@ public class PlanService {
         plan.setAnalyticalRecommendation(recommendation);
         plan.setPurchasingPowerCalculation(recommendation.getPurchasingPowerCalculation());
         var now = Instant.now();
-        plan.setStatus(PlanStatus.DRAFT);
+        plan.setStatus(PlanStatus.IN_PROGRESS);
         plan.setSentToManagerAt(now);
         plan.setUpdatedAt(now);
         plans.saveAndFlush(plan);
@@ -198,15 +220,21 @@ public class PlanService {
         requireAccess(plan, manager);
         checkVersion(plan, input.version());
         requireEditable(plan);
-        if (input.submit() && input.items().isEmpty()) {
-            throw fieldError("items", "Добавьте хотя бы одну товарную позицию");
-        }
 
         var stored = items.findByRegionalPlanIdOrderByProductNameAscIdAsc(id).stream()
                 .collect(Collectors.toMap(item -> item.getProduct().getId(), Function.identity()));
-        var productIds = input.items().stream().map(LineInput::productId).toList();
+        var productIds = input.items().stream().map(LineInput::productId).filter(Objects::nonNull).distinct().toList();
         var catalog = products.findAllById(productIds).stream().collect(Collectors.toMap(Product::getId, Function.identity()));
-        validateItems(input.items(), stored, catalog);
+        var errors = itemErrors(input.items(), stored, catalog);
+        if (input.submit() && input.items().isEmpty()) errors.put("items", "Добавьте хотя бы одну товарную позицию");
+        if (!errors.isEmpty()) {
+            if (!input.submit()) throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Проверьте позиции плана", errors);
+            plan.setStatus(PlanStatus.NEEDS_CORRECTION);
+            plan.setValidationNote(String.join("\n", errors.values()));
+            plan.setUpdatedAt(Instant.now());
+            plans.saveAndFlush(plan);
+            return summary(plan);
+        }
 
         var changes = input.items().stream().map(line -> {
             var item = stored.remove(line.productId());
@@ -220,9 +248,23 @@ public class PlanService {
             return item;
         }).toList();
         items.deleteAll(stored.values());
-        if (input.submit()) plan.setStatus(PlanStatus.IN_REVIEW);
+        plan.setStatus(input.submit() ? PlanStatus.IN_REVIEW : PlanStatus.IN_PROGRESS);
+        plan.setValidationNote(null);
         plan.setUpdatedAt(Instant.now());
         items.saveAllAndFlush(changes);
+        return summary(plan);
+    }
+
+    @Transactional
+    public Summary withdraw(Long id, Long version, AppPrincipal actor) {
+        var manager = requireRole(actor, RoleCode.MANAGER);
+        var plan = findPlan(id, true);
+        requireAccess(plan, manager);
+        checkVersion(plan, version);
+        if (plan.getStatus() != PlanStatus.IN_REVIEW) throw invalidStage("Отозвать можно план на согласовании");
+        plan.setStatus(PlanStatus.IN_PROGRESS);
+        plan.setUpdatedAt(Instant.now());
+        plans.saveAndFlush(plan);
         return summary(plan);
     }
 
@@ -231,7 +273,7 @@ public class PlanService {
         var head = requireRole(actor, RoleCode.SALES_HEAD);
         var plan = findPlan(id, true);
         checkVersion(plan, input.version());
-        if (plan.getStatus() != PlanStatus.IN_REVIEW) throw invalidStage("План должен быть на проверке");
+        if (plan.getStatus() != PlanStatus.IN_REVIEW) throw invalidStage("План должен быть на согласовании");
         var now = Instant.now();
         if (input.decision() == Decision.RETURN) {
             if (input.reviewComment() == null) throw fieldError("reviewComment", "Укажите, что нужно исправить");
@@ -258,8 +300,7 @@ public class PlanService {
             var period = new CalendarPeriod(input.periodStart(), input.periodEnd());
             var region = regions.findById(input.regionId()).filter(Region::isActive)
                     .orElseThrow(() -> fieldError("regionId", "Выберите действующий регион"));
-            if (plans.findByRegionIdAndPeriodStartAndPeriodEnd(region.getId(), period.start(), period.end())
-                    .filter(existing -> !existing.getId().equals(plan.getId())).isPresent()) {
+            if (plans.existsByRegionIdAndPeriodStartAndPeriodEndAndStatusNot(region.getId(), period.start(), period.end(), PlanStatus.CANCELLED)) {
                 throw new ApiException(HttpStatus.CONFLICT, "PLAN_EXISTS", "План для этого региона и периода уже существует");
             }
             plan.setRegion(region);
@@ -291,23 +332,28 @@ public class PlanService {
                 && assignments.hasActiveAssignment(manager.getId(), regionId, LocalDate.now(MINSK));
     }
 
-    private static void validateItems(List<LineInput> lines, Map<Long, PlanItem> stored, Map<Long, Product> catalog) {
+    private Map<String, String> itemErrors(List<LineInput> lines, Map<Long, PlanItem> stored, Map<Long, Product> catalog) {
         var seen = new HashSet<Long>();
         var errors = new LinkedHashMap<String, String>();
         for (int index = 0; index < lines.size(); index++) {
             var line = lines.get(index);
             var field = "items[" + index + "]";
-            var product = catalog.get(line.productId());
-            if (!seen.add(line.productId())) {
-                errors.put(field + ".productId", "Товар уже есть в плане");
-            } else if (product == null || (!product.isActive() && !stored.containsKey(product.getId()))) {
-                errors.put(field + ".productId", "Выберите товар из действующего каталога");
+            var row = "Строка " + (index + 1) + ". ";
+            var violations = validator.validate(line);
+            violations.forEach(violation -> errors.putIfAbsent(field + "." + violation.getPropertyPath(), row + violation.getMessage()));
+            if (!errors.containsKey(field + ".productId")) {
+                var product = catalog.get(line.productId());
+                if (!seen.add(line.productId())) {
+                    errors.put(field + ".productId", row + "Товар уже есть в плане");
+                } else if (product == null || (!product.isActive() && !stored.containsKey(product.getId()))) {
+                    errors.put(field + ".productId", row + "Выберите товар из действующего каталога");
+                }
             }
-            if (line.plannedQuantity().multiply(line.plannedUnitPrice()).setScale(2, RoundingMode.HALF_UP).precision() > 18) {
-                errors.put(field + ".plannedUnitPrice", "Сумма строки превышает допустимое значение");
+            if (violations.isEmpty() && line.plannedQuantity().multiply(line.plannedUnitPrice()).setScale(2, RoundingMode.HALF_UP).precision() > 18) {
+                errors.put(field + ".plannedUnitPrice", row + "Сумма строки превышает допустимое значение");
             }
         }
-        if (!errors.isEmpty()) throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_ERROR", "Проверьте позиции плана", errors);
+        return errors;
     }
 
     private List<Offer> offers(RegionalPlan plan, Recommendation recommendation) {
@@ -382,12 +428,23 @@ public class PlanService {
         return (lock ? plans.findForUpdate(id) : plans.findById(id)).orElseThrow(PlanService::notFound);
     }
 
+    private RegionalPlan headPlanForUpdate(Long id, Long version, AppPrincipal actor) {
+        requireRole(actor, RoleCode.SALES_HEAD);
+        var plan = findPlan(id, true);
+        checkVersion(plan, version);
+        return plan;
+    }
+
     private static boolean editable(RegionalPlan plan) {
-        return plan.getStatus() == PlanStatus.DRAFT || plan.getStatus() == PlanStatus.REVISION;
+        return switch (plan.getStatus()) {
+            case IN_PROGRESS, NEEDS_CORRECTION, REVISION -> true;
+            case DRAFT -> plan.getSentToManagerAt() != null;
+            default -> false;
+        };
     }
 
     private static boolean canEditParameters(RegionalPlan plan) {
-        return editable(plan) || plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
+        return editable(plan) || plan.getStatus() == PlanStatus.DRAFT || plan.getStatus() == PlanStatus.AWAITING_ANALYSIS;
     }
 
     private void requirePendingAnalysis(RegionalPlan plan, AppUser analyst, Long version) {
@@ -397,7 +454,7 @@ public class PlanService {
     }
 
     private static void requireEditable(RegionalPlan plan) {
-        if (!editable(plan)) throw invalidStage("Изменять можно черновик или план на доработке");
+        if (!editable(plan)) throw invalidStage("Позиции плана недоступны для редактирования");
     }
 
     private static void checkVersion(RegionalPlan plan, Long version) {

@@ -1,11 +1,11 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FocusEvent, FormEvent } from 'react'
 import { api, ApiError } from '../../api/client'
 import { CalendarPeriodFields, initialPeriod, periodDates } from '../../components/CalendarPeriodFields'
 import { Loading } from '../../components/Loading'
 import { useResource } from '../../hooks/useResource'
 import { AdminDialog } from '../administration/AdminDialog'
-import { formatPeriod, normalizeDecimal } from './planFormat'
+import { formatPeriod, formatPlanMoney, normalizeDecimal, normalizeMoney } from './planFormat'
 import type { PlanDetail, PlanRegion, PlanSummary } from './types'
 
 export function PlanEditor({ detail, onClose, onSaved }: {
@@ -31,15 +31,20 @@ export function PlanEditor({ detail, onClose, onSaved }: {
     && !managers.some(manager => String(manager.id) === managerId)
   const ready = !!options.data && !options.error
 
+  function formatAmount(event: FocusEvent<HTMLInputElement>) {
+    const amount = normalizeMoney(event.currentTarget.value, 16)
+    if (amount !== null) event.currentTarget.value = formatPlanMoney(amount)
+  }
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (busy || !ready) return
     const requestAnalysis = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'analysis'
     const form = new FormData(event.currentTarget)
-    const goal = normalizeDecimal(String(form.get('targetRevenue')), 16, 2)
+    const goal = normalizeMoney(String(form.get('targetRevenue')), 16)
     const budgetText = String(form.get('budgetLimit')).trim()
     const discountText = String(form.get('maxDiscountPercent')).trim()
-    const budget = budgetText ? normalizeDecimal(budgetText, 16, 2) : null
+    const budget = budgetText ? normalizeMoney(budgetText, 16) : null
     const discount = discountText ? normalizeDecimal(discountText, 3, 2) : null
     const issues: Record<string, string> = {}
     if (goal === null || Number(goal) <= 0) issues.targetRevenue = 'Введите положительную сумму с точностью до копейки'
@@ -117,13 +122,15 @@ export function PlanEditor({ detail, onClose, onSaved }: {
           ) : <CalendarPeriodFields value={period} onChange={setPeriod} error={fields.periodStart || fields.periodEnd}/>}
           <label className="admin-field">
             Целевая выручка, BYN
-            <input name="targetRevenue" inputMode="decimal" maxLength={19} defaultValue={plan?.targetRevenue ?? ''} required
+            <input name="targetRevenue" inputMode="decimal" defaultValue={plan?.targetRevenue ? formatPlanMoney(plan.targetRevenue) : ''}
+              required onBlur={formatAmount} onChange={() => setFields(previous => ({ ...previous, targetRevenue: '' }))}
               aria-invalid={!!fields.targetRevenue}/>
             {fields.targetRevenue && <small className="field-error">{fields.targetRevenue}</small>}
           </label>
           <label className="admin-field">
             Лимит затрат, BYN
-            <input name="budgetLimit" inputMode="decimal" maxLength={19} defaultValue={detail?.budgetLimit ?? ''}
+            <input name="budgetLimit" inputMode="decimal" defaultValue={detail?.budgetLimit ? formatPlanMoney(detail.budgetLimit) : ''}
+              onBlur={formatAmount} onChange={() => setFields(previous => ({ ...previous, budgetLimit: '' }))}
               aria-invalid={!!fields.budgetLimit}/>
             {fields.budgetLimit && <small className="field-error">{fields.budgetLimit}</small>}
           </label>

@@ -6,7 +6,6 @@ import by.regsales.domain.PlanStatus;
 import by.regsales.domain.RegionalPlan;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonFormat;
-import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
@@ -58,7 +57,7 @@ public final class PlanDtos {
     }
 
     public record ItemsInput(@NotNull @PositiveOrZero Long version,
-                             @NotNull @Size(max = 5000) List<@NotNull @Valid LineInput> items,
+                             @NotNull @Size(max = 5000) List<@NotNull LineInput> items,
                              boolean submit) {}
 
     public enum Decision { APPROVE, RETURN }
@@ -79,13 +78,15 @@ public final class PlanDtos {
     public record Summary(Long id, long version, Long regionId, String regionName, ManagerChoice manager,
                           LocalDate periodStart, LocalDate periodEnd, PlanStatus status, Instant sentToManagerAt,
                           @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal targetRevenue,
-                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal plannedRevenue) {
+                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal plannedRevenue,
+                          String validationNote) {
         static Summary from(RegionalPlan plan, BigDecimal revenue) {
             var manager = plan.getAssignedManager();
             var target = plan.getTargetRevenue();
             return new Summary(plan.getId(), plan.getVersion(), plan.getRegion().getId(), plan.getRegion().getName(),
                     manager == null ? null : ManagerChoice.from(manager), plan.getPeriodStart(), plan.getPeriodEnd(),
-                    plan.getStatus(), plan.getSentToManagerAt(), target == null ? null : target.setScale(2), revenue.setScale(2));
+                    plan.getStatus(), plan.getSentToManagerAt(), target == null ? null : target.setScale(2), revenue.setScale(2),
+                    plan.getValidationNote());
         }
     }
 
@@ -110,6 +111,7 @@ public final class PlanDtos {
                          @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal maxDiscountPercent,
                          String planningComment, String reviewComment, String approvedBy, Instant approvedAt,
                          boolean canEditParameters, boolean canEditItems, boolean canReview, boolean canAnalyze,
+                         boolean canWithdraw,
                          Recommendation recommendation,
                          List<Item> items, List<Offer> offers, SalesPeriod previous, SalesPeriod actual) {}
 

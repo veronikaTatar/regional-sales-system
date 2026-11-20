@@ -4,9 +4,12 @@ import type { PlanStatus, PlanSummary } from './types'
 export const planStatusLabels: Record<PlanStatus, string> = {
   DRAFT: 'Черновик',
   AWAITING_ANALYSIS: 'На анализе',
-  IN_REVIEW: 'На проверке',
-  REVISION: 'На доработке',
+  IN_PROGRESS: 'В работе',
+  NEEDS_CORRECTION: 'Требует исправления',
+  IN_REVIEW: 'На согласовании',
+  REVISION: 'Отклонён',
   APPROVED: 'Утверждён',
+  CANCELLED: 'Отменён',
 }
 
 const integer = new Intl.NumberFormat('ru-BY', { maximumFractionDigits: 0 })
@@ -24,6 +27,15 @@ export function normalizeDecimal(value: string, wholeDigits: number, fractionDig
   const match = /^(\d+)(?:\.(\d+))?$/.exec(normalized)
   if (!match || match[1].length > wholeDigits || (match[2]?.length ?? 0) > fractionDigits) return null
   return normalized
+}
+
+export function normalizeMoney(value: string, wholeDigits: number) {
+  const input = value.trim().replace(/^[.,](?=\d)/, '0$&')
+  const match = /^(\d+|\d{1,3}(?:[ \u00a0\u202f]\d{3})+)(?:[.,](\d{0,2}))?$/.exec(input)
+  if (!match) return null
+  const whole = match[1].replace(/[ \u00a0\u202f]/g, '')
+  if (whole.length > wholeDigits) return null
+  return whole + '.' + (match[2] ?? '').padEnd(2, '0')
 }
 
 function scaled(value: string, scale: number) {

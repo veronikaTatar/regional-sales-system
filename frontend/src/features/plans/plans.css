@@ -57,6 +57,44 @@
   color: #3e5c83;
 }
 
+.mini-status.plan-status-in_progress {
+  background: #e7f4ef;
+  color: #286b56;
+}
+
+.mini-status.plan-status-needs_correction {
+  background: #fff0e3;
+  color: #975220;
+}
+
+.mini-status.plan-status-cancelled {
+  background: #eceef0;
+  color: #56626b;
+}
+
+.plan-row-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.plan-row-actions .danger-text,
+.plan-removal-confirm {
+  color: #a73532;
+}
+
+.plan-removal-description {
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.plan-validation-note p {
+  margin-top: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .plan-suggested-price .cell-secondary {
   color: #35685c;
 }

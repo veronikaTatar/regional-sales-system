@@ -2,28 +2,30 @@ import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { api, ApiError } from '../../api/client'
-import { formatCents, formatGoalProgress, formatPlanMoney, lineCents, normalizeDecimal } from './planFormat'
+import { formatCents, formatGoalProgress, formatPlanMoney, lineCents, normalizeDecimal, normalizeMoney } from './planFormat'
 import type { PlanDetail, PlanItem, PlanSummary } from './types'
 
 type DraftRow = Pick<PlanItem, 'productId' | 'sku' | 'name' | 'unit' | 'plannedQuantity' | 'plannedUnitPrice'>
 
-export function PlanItemsEditor({ detail, onSaved }: {
+export function PlanItemsEditor({ detail, onSaved, onReload }: {
   detail: PlanDetail
   onSaved: (plan: PlanSummary) => Promise<void>
+  onReload: () => Promise<void>
 }) {
   const [rows, setRows] = useState<DraftRow[]>(() => detail.items.map(item => ({
-    ...item, plannedQuantity: item.plannedQuantity.replace('.', ','), plannedUnitPrice: item.plannedUnitPrice.replace('.', ','),
+    ...item, plannedQuantity: item.plannedQuantity.replace('.', ','), plannedUnitPrice: formatPlanMoney(item.plannedUnitPrice),
   })))
   const [productId, setProductId] = useState('')
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusy] = useState<'save' | 'review' | null>(null)
   const [error, setError] = useState('')
+  const [stale, setStale] = useState(false)
   const [fields, setFields] = useState<Record<string, string>>({})
   const offerById = useMemo(() => new Map(detail.offers.map(offer => [offer.productId, offer])), [detail.offers])
   const selected = new Set(rows.map(row => row.productId))
   const available = detail.offers.filter(offer => !selected.has(offer.productId))
   const values = rows.map(row => {
     const quantity = normalizeDecimal(row.plannedQuantity, 11, 3)
-    const price = normalizeDecimal(row.plannedUnitPrice, 12, 2)
+    const price = normalizeMoney(row.plannedUnitPrice, 12)
     return {
       productId: row.productId, plannedQuantity: quantity, plannedUnitPrice: price,
       amount: quantity && Number(quantity) > 0 && price !== null ? lineCents(quantity, price) : null,
@@ -36,7 +38,7 @@ export function PlanItemsEditor({ detail, onSaved }: {
   function addProduct() {
     const offer = available.find(item => String(item.productId) === productId)
     if (!offer) return
-    setRows(previous => [...previous, { ...offer, plannedQuantity: '', plannedUnitPrice: offer.unitPrice.replace('.', ',') }])
+    setRows(previous => [...previous, { ...offer, plannedQuantity: '', plannedUnitPrice: formatPlanMoney(offer.unitPrice) }])
     setProductId('')
     setFields({})
   }
@@ -47,7 +49,7 @@ export function PlanItemsEditor({ detail, onSaved }: {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (busy) return
+    if (busy || stale) return
     const submit = (event.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'review'
     const issues: Record<string, string> = {}
     if (submit && !rows.length) issues.items = 'Добавьте хотя бы одну товарную позицию'
@@ -59,9 +61,9 @@ export function PlanItemsEditor({ detail, onSaved }: {
     })
     setError('')
     setFields(issues)
-    if (Object.keys(issues).length) return
+    if (!submit && Object.keys(issues).length) return
 
-    setBusy(true)
+    setBusy(submit ? 'review' : 'save')
     try {
       const updated = await api<PlanSummary>('/plans/' + detail.plan.id + '/items', {
         method: 'PUT',
@@ -73,9 +75,12 @@ export function PlanItemsEditor({ detail, onSaved }: {
       await onSaved(updated)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось сохранить позиции.')
-      if (cause instanceof ApiError) setFields(cause.fieldErrors)
+      if (cause instanceof ApiError) {
+        setFields(cause.fieldErrors)
+        setStale(cause.code === 'PLAN_CHANGED')
+      }
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
@@ -85,16 +90,18 @@ export function PlanItemsEditor({ detail, onSaved }: {
         <h2>Позиции плана</h2>
         <div className="plan-item-picker">
           <select aria-label="Товар для добавления в план" value={productId}
-            onChange={event => setProductId(event.target.value)} disabled={busy || !available.length}>
+            onChange={event => setProductId(event.target.value)} disabled={!!busy || !available.length}>
             <option value="">{available.length ? 'Выберите товар' : 'Нет товаров для добавления'}</option>
             {available.map(offer => <option key={offer.productId} value={offer.productId}>{offer.sku} — {offer.name}</option>)}
           </select>
-          <button type="button" className="button button-secondary" onClick={addProduct} disabled={busy || !productId}>
+          <button type="button" className="button button-secondary" onClick={addProduct} disabled={!!busy || !productId}>
             <Plus size={15} aria-hidden="true"/>Добавить позицию
           </button>
         </div>
       </div>
-      {error && <div className="alert alert-error plan-form-alert" role="alert">{error}</div>}
+      {error && <div className="alert alert-error plan-form-alert" role="alert">{error}
+        {stale && <button type="button" className="text-button" onClick={() => void onReload()}>Обновить план</button>}
+      </div>}
       {fields.items && <p className="field-error plan-form-alert" role="alert">{fields.items}</p>}
       {rows.length > 0 && (
         <div className="table-scroll">
@@ -122,27 +129,30 @@ export function PlanItemsEditor({ detail, onSaved }: {
                     <td>
                       <input className="plan-value-input" inputMode="decimal" maxLength={15} aria-label={'Количество ' + row.sku}
                         value={row.plannedQuantity} onChange={event => editRow(row.productId, 'plannedQuantity', event.target.value)}
-                        disabled={busy} aria-invalid={!!fields[prefix + '.plannedQuantity']}/>
+                        disabled={!!busy} aria-invalid={!!fields[prefix + '.plannedQuantity']}/>
                       {fields[prefix + '.plannedQuantity'] && <small className="field-error">{fields[prefix + '.plannedQuantity']}</small>}
                     </td>
                     <td>
-                      <input className="plan-value-input" inputMode="decimal" maxLength={15} aria-label={'Цена ' + row.sku}
+                      <input className="plan-value-input" inputMode="decimal" aria-label={'Цена ' + row.sku}
                         value={row.plannedUnitPrice} onChange={event => editRow(row.productId, 'plannedUnitPrice', event.target.value)}
-                        disabled={busy} aria-invalid={!!fields[prefix + '.plannedUnitPrice']}/>
+                        onBlur={() => {
+                          const price = values[index].plannedUnitPrice
+                          if (price !== null) editRow(row.productId, 'plannedUnitPrice', formatPlanMoney(price))
+                        }} disabled={!!busy} aria-invalid={!!fields[prefix + '.plannedUnitPrice']}/>
                       {offer && <small className="cell-secondary">
                         {formatPlanMoney(offer.unitPrice)} · {offer.priceListCode ?? (offer.fromHistory ? 'История цен' : 'Каталог')}
                       </small>}
                       {suggestedPrice && <div className="plan-suggested-price">
                         <small className="cell-secondary">Рекомендовано {formatPlanMoney(suggestedPrice)} BYN</small>
-                        {row.plannedUnitPrice !== suggestedPrice.replace('.', ',') && <button type="button"
-                          className="text-button" aria-label={'Применить рекомендованную цену ' + row.sku} disabled={busy}
-                          onClick={() => editRow(row.productId, 'plannedUnitPrice', suggestedPrice.replace('.', ','))}>Применить</button>}
+                        {values[index].plannedUnitPrice !== suggestedPrice && <button type="button"
+                          className="text-button" aria-label={'Применить рекомендованную цену ' + row.sku} disabled={!!busy}
+                          onClick={() => editRow(row.productId, 'plannedUnitPrice', formatPlanMoney(suggestedPrice))}>Применить</button>}
                       </div>}
                       {fields[prefix + '.plannedUnitPrice'] && <small className="field-error">{fields[prefix + '.plannedUnitPrice']}</small>}
                     </td>
                     <td className="numeric">{amount === null ? '—' : formatCents(amount)}</td>
                     <td>
-                      <button type="button" className="icon-button danger-text" aria-label={'Убрать ' + row.sku} disabled={busy}
+                      <button type="button" className="icon-button danger-text" aria-label={'Убрать ' + row.sku} disabled={!!busy}
                         onClick={() => {
                           setRows(previous => previous.filter(line => line.productId !== row.productId))
                           setFields({})
@@ -164,8 +174,10 @@ export function PlanItemsEditor({ detail, onSaved }: {
           <span>От цели {total === null ? '—' : formatGoalProgress(total, detail.plan.targetRevenue)}</span>
         </div>
         <div className="product-page-actions">
-          <button type="submit" className="button button-secondary" disabled={busy}>Сохранить позиции</button>
-          <button type="submit" value="review" className="button button-primary" disabled={busy}>Отправить на проверку</button>
+          <button type="submit" className="button button-secondary" disabled={!!busy || stale}>Сохранить позиции</button>
+          <button type="submit" value="review" className="button button-primary" disabled={!!busy || stale}>
+            {busy === 'review' ? 'Проверяем данные…' : 'Отправить на проверку'}
+          </button>
         </div>
       </footer>
     </form>

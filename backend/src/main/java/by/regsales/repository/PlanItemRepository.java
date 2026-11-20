@@ -3,6 +3,7 @@ package by.regsales.repository;
 import by.regsales.domain.PlanItem;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.math.BigDecimal;
@@ -14,6 +15,10 @@ public interface PlanItemRepository extends JpaRepository<PlanItem, Long> {
     List<PlanItem> findByRegionalPlanIdOrderByProductNameAscIdAsc(Long planId);
 
     boolean existsByRegionalPlanId(Long planId);
+
+    @Modifying
+    @Query("delete from PlanItem item where item.regionalPlan.id = :planId")
+    void deleteForPlan(Long planId);
 
     @Query("""
             select item.regionalPlan.id as planId, sum(item.plannedAmount) as revenue from PlanItem item

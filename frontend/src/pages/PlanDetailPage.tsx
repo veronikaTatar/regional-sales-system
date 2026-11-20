@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ArrowLeft, Check, Pencil, Undo2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
+import { api, ApiError } from '../api/client'
 import { Loading } from '../components/Loading'
 import { PlanRecommendation } from '../features/analytics/AnalysisResults'
 import { PlanAnalysisForm } from '../features/analytics/PlanAnalysisForm'
@@ -21,6 +22,9 @@ export function PlanDetailPage() {
   const { data: detail, error, loading, refresh } = useResource<PlanDetail>('/plans/' + id)
   const [dialog, setDialog] = useState<'EDIT' | 'APPROVE' | 'RETURN' | null>(null)
   const [notice, setNotice] = useState('')
+  const [failedCheck, setFailedCheck] = useState<PlanSummary | null>(null)
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [withdrawError, setWithdrawError] = useState('')
   const analyst = user?.role === 'ANALYST'
   const back = <Link to={analyst ? '/purchasing-power' : '/plans'} className="button button-secondary">
     <ArrowLeft size={16} aria-hidden="true"/>{analyst ? 'К заданиям' : 'К планам'}</Link>
@@ -32,24 +36,57 @@ export function PlanDetailPage() {
     </div>
   </>
   if (!detail || detail.plan.id !== Number(id)) return <Loading label="Загружаем план…"/>
-  const plan = detail.plan
+  const plan = failedCheck?.id === detail.plan.id && failedCheck.version > detail.plan.version ? failedCheck : detail.plan
   const progress = formatGoalProgress(planCents(plan.plannedRevenue), plan.targetRevenue)
 
   async function onSaved(saved: PlanSummary) {
     setDialog(null)
+    setWithdrawError('')
+    if (saved.status === 'NEEDS_CORRECTION') {
+      setFailedCheck(saved)
+      setNotice('')
+      return
+    }
     if (saved.status === 'APPROVED') setNotice('План утверждён.')
-    else if (saved.status === 'IN_REVIEW') setNotice('План передан на проверку.')
+    else if (saved.status === 'IN_REVIEW') setNotice('План передан на согласование.')
+    else if (plan.status === 'IN_REVIEW' && saved.status === 'IN_PROGRESS') setNotice('План отозван. Позиции доступны для редактирования.')
     else if (saved.status === 'AWAITING_ANALYSIS' && plan.status !== 'AWAITING_ANALYSIS') setNotice('Задание передано аналитику.')
     else if (dialog === 'RETURN') setNotice('План возвращён менеджеру на доработку.')
     else if (saved.sentToManagerAt && !plan.sentToManagerAt) setNotice('Рекомендация сохранена. Задание передано менеджеру.')
     else setNotice(dialog === 'EDIT' ? 'Параметры плана сохранены.' : 'Позиции плана сохранены.')
     await refresh()
+    setFailedCheck(null)
+  }
+
+  async function withdraw() {
+    if (withdrawing || loading) return
+    setWithdrawing(true)
+    setNotice('')
+    setWithdrawError('')
+    try {
+      const updated = await api<PlanSummary>('/plans/' + plan.id + '/withdraw?version=' + plan.version, { method: 'POST' })
+      await onSaved(updated)
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 409) {
+        setWithdrawError('Статус плана изменился. Проверьте карточку.')
+        await refresh()
+      } else {
+        setWithdrawError(cause instanceof Error ? cause.message : 'Не удалось отозвать план.')
+      }
+    } finally {
+      setWithdrawing(false)
+    }
   }
 
   return <>
     <PageHeading eyebrow="РЕГИОНАЛЬНЫЙ ПЛАН" title={plan.regionName} subtitle={formatPeriod(plan.periodStart, plan.periodEnd)}>
       <div className="product-page-actions">
         {back}
+        {detail.canWithdraw && (
+          <button type="button" className="button button-primary" disabled={withdrawing || loading} onClick={() => void withdraw()}>
+            <Undo2 size={16} aria-hidden="true"/>{withdrawing ? 'Отзываем…' : 'Отозвать на редактирование'}
+          </button>
+        )}
         {detail.canEditParameters && (
           <button type="button" className="button button-primary" disabled={loading} onClick={() => setDialog('EDIT')}>
             <Pencil size={16} aria-hidden="true"/>Редактировать задание
@@ -66,6 +103,7 @@ export function PlanDetailPage() {
       </div>
     </PageHeading>
     {notice && <p className="alert admin-success" role="status">{notice}</p>}
+    {withdrawError && <div className="alert alert-error" role="alert">{withdrawError}</div>}
     <section className="panel plan-parameters" aria-labelledby="plan-parameters-heading">
       <div className="plan-parameters-heading">
         <h2 id="plan-parameters-heading">Задание</h2>
@@ -102,10 +140,14 @@ export function PlanDetailPage() {
     </div>
 
     {detail.recommendation && <PlanRecommendation recommendation={detail.recommendation} linkToCalculation={user?.role !== 'MANAGER'}/>}
+    {plan.validationNote && <div className="alert alert-error plan-validation-note" role="alert">
+      <strong>Ошибки проверки данных</strong>
+      <p>{plan.validationNote}</p>
+    </div>}
     {detail.canAnalyze ? <PlanAnalysisForm key={plan.id + '-' + plan.version} plan={plan} onSaved={onSaved} onReload={refresh}/>
     : <section className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
       {detail.canEditItems ? (
-        <PlanItemsEditor key={plan.id + '-' + plan.version} detail={detail} onSaved={onSaved}/>
+        <PlanItemsEditor key={plan.id + '-' + detail.plan.version} detail={{ ...detail, plan }} onSaved={onSaved} onReload={refresh}/>
       ) : <>
         <div className="plan-section-top"><h2>Позиции плана</h2></div>
         {detail.items.length ? (

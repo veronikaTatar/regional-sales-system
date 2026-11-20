@@ -7,9 +7,12 @@ import type { PlanSummary } from './types'
 const tasks = {
   DRAFT: 'Заполнить план',
   AWAITING_ANALYSIS: 'Подготовить анализ',
+  IN_PROGRESS: 'Заполнить план',
+  NEEDS_CORRECTION: 'Исправить данные плана',
   IN_REVIEW: 'Проверить план',
   REVISION: 'Доработать план',
   APPROVED: 'Открыть план',
+  CANCELLED: 'Открыть план',
 }
 
 export function PlanAttention() {

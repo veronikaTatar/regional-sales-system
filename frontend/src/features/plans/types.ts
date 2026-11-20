@@ -1,6 +1,7 @@
 import type { Recommendation } from '../analytics/types'
 
-export type PlanStatus = 'DRAFT' | 'AWAITING_ANALYSIS' | 'IN_REVIEW' | 'REVISION' | 'APPROVED'
+export type PlanStatus = 'DRAFT' | 'AWAITING_ANALYSIS' | 'IN_PROGRESS' | 'NEEDS_CORRECTION'
+  | 'IN_REVIEW' | 'REVISION' | 'APPROVED' | 'CANCELLED'
 
 export interface PlanManager {
   id: number
@@ -25,6 +26,7 @@ export interface PlanSummary {
   sentToManagerAt: string | null
   targetRevenue: string | null
   plannedRevenue: string
+  validationNote: string | null
 }
 
 export interface PlanOffer {
@@ -73,6 +75,7 @@ export interface PlanDetail {
   canEditItems: boolean
   canReview: boolean
   canAnalyze: boolean
+  canWithdraw: boolean
   recommendation: Recommendation | null
   items: PlanItem[]
   offers: PlanOffer[]

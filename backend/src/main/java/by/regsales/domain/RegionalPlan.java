@@ -1,15 +1,18 @@
 package by.regsales.domain;
 
 import jakarta.persistence.*;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.GeneratedColumn;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Instant;
 
 @Entity
-@Table(name = "regional_plans", uniqueConstraints = @UniqueConstraint(name = "uk_plan_region_period", columnNames = {"region_id", "period_start", "period_end"}))
+@Table(name = "regional_plans", uniqueConstraints = @UniqueConstraint(name = "uk_active_plan_region_period",
+        columnNames = {"region_id", "period_start", "period_end", "active_slot"}))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -31,6 +34,12 @@ public class RegionalPlan {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private PlanStatus status = PlanStatus.DRAFT;
+
+    @GeneratedColumn("case when status = 'CANCELLED' then null else 1 end")
+    @Column(columnDefinition = "TINYINT", insertable = false, updatable = false)
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    private Byte activeSlot;
 
     @Column(precision = 18, scale = 2)
     private BigDecimal budgetLimit;
@@ -70,6 +79,9 @@ public class RegionalPlan {
 
     @Column(columnDefinition = "TEXT")
     private String reviewComment;
+
+    @Column(columnDefinition = "MEDIUMTEXT")
+    private String validationNote;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;

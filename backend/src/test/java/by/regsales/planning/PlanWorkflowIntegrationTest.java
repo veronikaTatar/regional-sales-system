@@ -1,6 +1,7 @@
 package by.regsales.planning;
 
 import by.regsales.domain.AppUser;
+import by.regsales.domain.PlanStatus;
 import by.regsales.domain.Product;
 import by.regsales.domain.ProductPrice;
 import by.regsales.domain.Region;
@@ -43,6 +44,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -146,6 +149,7 @@ class PlanWorkflowIntegrationTest {
         assignments.saveAndFlush(assignment);
 
         var dispatched = read(write(put(path + "/analysis"), analyst, conclusion).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS"))
                 .andExpect(jsonPath("$.sentToManagerAt").isNotEmpty()));
         write(put(path + "/analysis"), analyst, conclusion).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("PLAN_CHANGED"));
@@ -173,8 +177,41 @@ class PlanWorkflowIntegrationTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_CHANGED"));
         write(put(path + "/items"), manager, Map.of("version", version(saved), "items", List.of(line, line)))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors['items[1].productId']").exists());
+        var invalidLine = Map.of("productId", product.getId(), "plannedUnitPrice", "-1");
+        var needsCorrection = read(write(put(path + "/items"), manager,
+                Map.of("version", version(saved), "items", List.of(invalidLine), "submit", true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("NEEDS_CORRECTION"))
+                .andExpect(jsonPath("$.validationNote", containsString("Укажите количество")))
+                .andExpect(jsonPath("$.validationNote", containsString("Цена должна быть неотрицательной"))));
+        mvc.perform(get(PATH).with(head)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("NEEDS_CORRECTION"));
+        mvc.perform(get(path).with(head)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.plan.validationNote", containsString("Укажите количество")))
+                .andExpect(jsonPath("$.items[0].plannedAmount").value("10.53"));
+        var corrected = read(write(put(path + "/items"), manager,
+                Map.of("version", version(needsCorrection), "items", List.of(line))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PROGRESS")).andExpect(jsonPath("$.validationNote").doesNotExist()));
+        var firstSubmission = read(write(put(path + "/items"), manager,
+                Map.of("version", version(corrected), "items", List.of(line), "submit", true)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_REVIEW")));
+        mvc.perform(get(path).with(manager)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.canWithdraw").value(true)).andExpect(jsonPath("$.canEditItems").value(false));
+        mvc.perform(post(path + "/withdraw").param("version", Long.toString(version(firstSubmission))).with(otherManager).with(csrf()))
+                .andExpect(status().isNotFound());
+        mvc.perform(post(path + "/withdraw").param("version", Long.toString(version(firstSubmission))).with(head).with(csrf()))
+                .andExpect(status().isForbidden());
+        var withdrawn = read(mvc.perform(post(path + "/withdraw").param("version", Long.toString(version(firstSubmission))).with(manager).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.plannedRevenue").value("10.53")));
+        mvc.perform(get(path).with(manager)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.canEditItems").value(true)).andExpect(jsonPath("$.canWithdraw").value(false))
+                .andExpect(jsonPath("$.items[0].plannedUnitPrice").value("4.21"))
+                .andExpect(jsonPath("$.recommendation.publication.text").value("Увеличить план по розеткам"));
+        mvc.perform(get(PATH).param("attention", "true").with(head)).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        write(post(path + "/review"), head, Map.of("version", version(firstSubmission), "decision", "APPROVE"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_CHANGED"));
         var submitted = read(write(put(path + "/items"), manager,
-                Map.of("version", version(saved), "items", List.of(line), "submit", true)).andExpect(status().isOk())
+                Map.of("version", version(withdrawn), "items", List.of(line), "submit", true)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("IN_REVIEW")));
 
         var review = Map.of("version", version(submitted), "decision", "RETURN", "reviewComment", "Уточните количество");
@@ -199,8 +236,14 @@ class PlanWorkflowIntegrationTest {
         mvc.perform(get(PATH + "/results").with(otherManager)).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         write(put(path + "/items"), manager, Map.of("version", version(approved), "items", List.of(line)))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_STAGE"));
+        mvc.perform(post(path + "/withdraw").param("version", Long.toString(version(approved))).with(manager).with(csrf()))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_STAGE"));
         parameters.put("version", version(approved));
         write(put(path), head, parameters).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_STAGE"));
+        mvc.perform(delete(path).param("version", Long.toString(version(approved))).with(head).with(csrf()))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_STAGE"));
+        mvc.perform(post(path + "/cancel").param("version", Long.toString(version(approved))).with(head).with(csrf()))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_STAGE"));
 
         assignment.setEndDate(LocalDate.now(ZoneId.of("Europe/Minsk")).minusDays(1));
         assignments.saveAndFlush(assignment);
@@ -232,6 +275,45 @@ class PlanWorkflowIntegrationTest {
         plans.saveAndFlush(plan);
         mvc.perform(get(PATH + "/" + plan.getId()).with(as(manager))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.canEditItems").value(true)).andExpect(jsonPath("$.recommendation").doesNotExist());
+    }
+
+    @Test void headCanCancelAndDeleteAPlanWithItemsAndReuseItsPeriod() throws Exception {
+        var head = as(account(RoleCode.SALES_HEAD));
+        var region = region();
+        var managerAccount = account(RoleCode.MANAGER);
+        assign(managerAccount, region);
+        var manager = as(managerAccount);
+        var parameters = parameters(region);
+        var original = read(write(post(PATH), head, parameters).andExpect(status().isCreated()));
+        var id = original.get("id").asLong();
+        var path = PATH + "/" + id;
+        var plan = plans.findById(id).orElseThrow();
+        plan.setAssignedManager(managerAccount);
+        plan.setSentToManagerAt(Instant.now());
+        plan.setStatus(PlanStatus.IN_PROGRESS);
+        var assignedVersion = plans.saveAndFlush(plan).getVersion();
+
+        var empty = read(write(put(path + "/items"), manager, Map.of("version", assignedVersion, "items", List.of(), "submit", true))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("NEEDS_CORRECTION")));
+        var line = Map.of("productId", product().getId(), "plannedQuantity", "1", "plannedUnitPrice", "4.50");
+        var withItems = read(write(put(path + "/items"), manager, Map.of("version", version(empty), "items", List.of(line)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("IN_PROGRESS")));
+
+        mvc.perform(delete(path).param("version", Long.toString(version(withItems))).with(manager).with(csrf()))
+                .andExpect(status().isForbidden());
+        mvc.perform(post(path + "/cancel").param("version", Long.toString(version(empty))).with(head).with(csrf()))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("PLAN_CHANGED"));
+        var cancelled = read(mvc.perform(post(path + "/cancel").param("version", Long.toString(version(withItems))).with(head).with(csrf()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CANCELLED")));
+        mvc.perform(get(path).with(head)).andExpect(status().isOk()).andExpect(jsonPath("$.items[0].plannedAmount").value("4.50"));
+        mvc.perform(get(PATH).param("attention", "true").with(manager)).andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        var replacement = read(write(post(PATH), head, parameters).andExpect(status().isCreated()));
+
+        mvc.perform(delete(path).param("version", Long.toString(version(cancelled))).with(head).with(csrf()))
+                .andExpect(status().isNoContent());
+        mvc.perform(get(path).with(head)).andExpect(status().isNotFound());
+        assertThat(planItems.existsByRegionalPlanId(id)).isFalse();
+        mvc.perform(get(PATH + "/" + replacement.get("id").asLong()).with(head)).andExpect(status().isOk());
     }
 
     private static Map<String, Object> parameters(Region region) {
