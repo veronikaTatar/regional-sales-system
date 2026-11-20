@@ -5,6 +5,7 @@ import { api, ApiError } from '../../api/client'
 import { Loading } from '../../components/Loading'
 import { useResource } from '../../hooks/useResource'
 import type { Region } from '../../types'
+import { regionsByRegistrationCode } from '../regions/regionCodes'
 import { AdminDialog } from './AdminDialog'
 import type { ManagedUser, RegionAssignment } from './types'
 
@@ -24,6 +25,7 @@ export function RegionAssignmentsDialog({ account, onClose }: { account: Managed
   const endpoint = `/users/${account.id}/region-assignments`
   const assignments = useResource<RegionAssignment[]>(endpoint)
   const regions = useResource<Region[]>('/regions')
+  const availableRegions = regionsByRegistrationCode(regions.data ?? [])
   const [draft, setDraft] = useState<AssignmentDraft | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -140,10 +142,14 @@ export function RegionAssignmentsDialog({ account, onClose }: { account: Managed
                 Регион
                 <select name="regionId" defaultValue={existing?.regionId ?? ''} required autoFocus>
                   <option value="" disabled>Выберите регион</option>
-                  {existing && !regions.data?.some(region => region.id === existing.regionId) && (
+                  {existing && !availableRegions.some(region => region.id === existing.regionId) && (
                     <option value={existing.regionId}>{existing.regionName}</option>
                   )}
-                  {regions.data?.map(region => <option key={region.id} value={region.id}>{region.name}</option>)}
+                  {availableRegions.map(region => (
+                    <option key={region.id} value={region.id}>
+                      {region.registrationCode === undefined ? region.name : `${region.registrationCode} — ${region.name}`}
+                    </option>
+                  ))}
                 </select>
                 {fieldErrors.regionId && <small className="field-error">{fieldErrors.regionId}</small>}
               </label>
@@ -170,7 +176,7 @@ export function RegionAssignmentsDialog({ account, onClose }: { account: Managed
           <footer className="admin-dialog-actions">
             <button type="button" className="button button-secondary" onClick={onClose} disabled={busy}>Готово</button>
             {canAssign && <button type="button" className="button button-primary" onClick={() => openEditor({})}
-              disabled={busy || !assignments.data || !regions.data?.length}><Plus size={16}/>Назначить регион</button>}
+              disabled={busy || !assignments.data || availableRegions.length === 0}><Plus size={16}/>Назначить регион</button>}
           </footer>
         )}
       </div>
