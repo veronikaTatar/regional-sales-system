@@ -1,0 +1,76 @@
+export type PlanStatus = 'DRAFT' | 'IN_REVIEW' | 'REVISION' | 'APPROVED'
+
+export interface PlanManager {
+  id: number
+  name: string
+}
+
+export interface PlanRegion {
+  id: number
+  name: string
+  managers: PlanManager[]
+}
+
+export interface PlanSummary {
+  id: number
+  version: number
+  regionId: number
+  regionName: string
+  manager: PlanManager | null
+  periodStart: string
+  periodEnd: string
+  status: PlanStatus
+  sentToManagerAt: string | null
+  targetRevenue: string | null
+  plannedRevenue: string
+}
+
+export interface PlanOffer {
+  productId: number
+  sku: string
+  name: string
+  unit: string
+  unitPrice: string
+  fromHistory: boolean
+  priceListCode: string | null
+}
+
+interface Sales {
+  quantity: string
+  revenue: string
+}
+
+interface SalesPeriod {
+  from: string
+  to: string
+  revenue: string
+}
+
+export interface PlanItem {
+  productId: number
+  sku: string
+  name: string
+  unit: string
+  plannedQuantity: string
+  plannedUnitPrice: string
+  plannedAmount: string
+  previous: Sales
+  actual: Sales | null
+}
+
+export interface PlanDetail {
+  plan: PlanSummary
+  budgetLimit: string | null
+  maxDiscountPercent: string | null
+  planningComment: string | null
+  reviewComment: string | null
+  approvedBy: string | null
+  approvedAt: string | null
+  canEditParameters: boolean
+  canEditItems: boolean
+  canReview: boolean
+  items: PlanItem[]
+  offers: PlanOffer[]
+  previous: SalesPeriod
+  actual: SalesPeriod | null
+}

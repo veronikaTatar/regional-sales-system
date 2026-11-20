@@ -1,0 +1,259 @@
+.plan-section-top,
+.plan-parameters-heading,
+.plan-items-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 18px;
+}
+
+.plan-section-top,
+.plan-items-footer {
+  padding: 16px 20px;
+}
+
+.plan-section-top {
+  border-bottom: 1px solid var(--border);
+}
+
+.plan-section-top h2,
+.plan-parameters-heading h2 {
+  font-size: 14px;
+  letter-spacing: -.02em;
+}
+
+.plan-section-top .count-pill {
+  margin-left: 6px;
+}
+
+.plan-list-table th,
+.plan-items-table th {
+  padding-block: 12px;
+}
+
+.plan-list-table .numeric,
+.plan-items-table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-nowrap {
+  white-space: nowrap;
+}
+
+.mini-status.plan-status-draft {
+  background: #edf2f4;
+  color: #516773;
+}
+
+.mini-status.plan-status-in_review {
+  background: #e7f1fb;
+  color: #2c5c80;
+}
+
+.mini-status.plan-status-revision {
+  background: #fcf2df;
+  color: #805320;
+}
+
+.plan-parameters {
+  padding: 20px;
+}
+
+.plan-parameters dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  margin: 16px 0 0;
+}
+
+.plan-parameters dt,
+.plan-field-hint {
+  color: #687b86;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.plan-parameters dd {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.plan-comment {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.plan-review-note {
+  margin-top: 15px;
+  padding: 12px 14px;
+  border: 1px solid #f0e2c6;
+  border-radius: 6px;
+  background: #fcf6eb;
+  color: #755224;
+  font-size: 12px;
+}
+
+.plan-review-note.plan-reviewed {
+  border-color: #dcebe3;
+  background: #edf6f1;
+  color: #386953;
+}
+
+.plan-review-note .plan-comment {
+  margin-top: 4px;
+}
+
+.plan-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(185px, 100%), 1fr));
+  gap: 12px;
+  margin-block: 16px;
+}
+
+.plan-metric {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 16px 20px;
+  color: #526977;
+  font-size: 11px;
+}
+
+.plan-metric strong {
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.plan-metric small {
+  color: #687b86;
+  font-size: 10px;
+}
+
+.plan-item-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.plan-item-picker select,
+.plan-value-input {
+  min-height: 36px;
+  padding: 7px 9px;
+  border: 1px solid #dfe7e9;
+  border-radius: 6px;
+  background: #fafbfc;
+  color: #314e58;
+  font-size: 11px;
+}
+
+.plan-item-picker select {
+  width: min(310px, 100%);
+  text-overflow: ellipsis;
+}
+
+.plan-value-input {
+  width: 112px;
+}
+
+.plan-value-input[aria-invalid="true"] {
+  border-color: #cd837b;
+}
+
+.plan-form-alert {
+  margin: 12px 20px;
+}
+
+.plan-empty-inline {
+  padding: 20px;
+  color: #687b86;
+  font-size: 12px;
+}
+
+.plan-items-footer {
+  border-top: 1px solid var(--border);
+}
+
+.plan-items-total {
+  display: grid;
+  gap: 3px;
+  color: #526977;
+  font-size: 11px;
+}
+
+.plan-items-total strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.plan-attention {
+  margin-bottom: 18px;
+}
+
+.plan-attention ul {
+  list-style: none;
+  margin: 0;
+  padding: 0 20px;
+}
+
+.plan-attention li + li {
+  border-top: 1px solid var(--border);
+}
+
+.plan-attention li a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  color: #31545e;
+}
+
+.plan-attention li a:hover {
+  color: var(--teal);
+}
+
+.plan-attention li small {
+  display: block;
+  margin-top: 3px;
+  color: #687b86;
+  font-size: 11px;
+}
+
+.plan-attention .card-icon {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+}
+
+.plan-attention li a > svg {
+  margin-left: auto;
+  color: var(--teal);
+}
+
+.plan-all-tasks {
+  display: inline-block;
+  margin: 0 20px 12px;
+}
+
+@media (max-width: 580px) {
+  .page-heading:has(.plan-create) {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .plan-items-footer .product-page-actions {
+    justify-content: flex-start;
+  }
+}

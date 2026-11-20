@@ -16,6 +16,7 @@ export function Layout() {
   const page = location.pathname === priceHistoryPage.path
     ? priceHistoryPage
     : pages.find(item => item.path === location.pathname)
+  const title = page?.title ?? (location.pathname.startsWith('/plans/') ? 'Региональный план' : 'Страница')
   const initials = user.fullName.trim().split(/\s+/).slice(0,2).map(word=>word[0]).join('').toUpperCase()
   async function signOut() {
     setBusy(true); setError('')
@@ -29,7 +30,7 @@ export function Layout() {
       <div className="sidebar-bottom"><div className="sidebar-security"><ShieldCheck size={17}/><span>Доступ защищён</span><span className="live-dot"/></div><button className="logout-button" onClick={()=>void signOut()} disabled={busy}><LogOut size={17}/>{busy ? 'Выходим…' : 'Выйти из системы'}</button></div>
     </aside>
     <div className="workspace-main">
-      <header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" onClick={()=>setOpen(true)} aria-label="Открыть меню"><Menu size={22}/></button><span>Рабочее пространство</span><ChevronRight size={14}/><strong>{page?.title ?? 'Страница'}</strong></div><Link className="user-chip" to="/profile"><div className="user-chip-text"><strong>{user.fullName}</strong><small>{user.roleName}</small></div><span className="avatar">{initials}</span></Link></header>
+      <header className="topbar"><div className="breadcrumb"><button className="icon-button mobile-menu" onClick={()=>setOpen(true)} aria-label="Открыть меню"><Menu size={22}/></button><span>Рабочее пространство</span><ChevronRight size={14}/><strong>{title}</strong></div><Link className="user-chip" to="/profile"><div className="user-chip-text"><strong>{user.fullName}</strong><small>{user.roleName}</small></div><span className="avatar">{initials}</span></Link></header>
       <main className="page-content">{error && <div className="alert alert-error" role="alert">{error}</div>}<Outlet/></main>
       <footer className="workspace-footer"><span>Регион · Система управления сбытом</span><span>BYN · Республика Беларусь</span></footer>
     </div>

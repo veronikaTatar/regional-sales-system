@@ -38,6 +38,18 @@ public class RegionalPlan {
     @Column(precision = 18, scale = 2)
     private BigDecimal targetRevenue;
 
+    @Column(precision = 5, scale = 2)
+    private BigDecimal maxDiscountPercent;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assigned_manager_id")
+    private AppUser assignedManager;
+
+    private Instant sentToManagerAt;
+
+    @Column(columnDefinition = "TEXT")
+    private String planningComment;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "purchasing_power_calculation_id")
     private PurchasingPowerCalculation purchasingPowerCalculation;
@@ -57,6 +69,8 @@ public class RegionalPlan {
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
+
+    private Instant updatedAt;
 
     @Version
     @Column(nullable = false)

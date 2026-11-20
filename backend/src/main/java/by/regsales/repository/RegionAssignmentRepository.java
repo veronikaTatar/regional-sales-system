@@ -2,6 +2,7 @@ package by.regsales.repository;
 
 import by.regsales.domain.Region;
 import by.regsales.domain.RegionAssignment;
+import by.regsales.domain.RoleCode;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -12,6 +13,16 @@ import java.util.Optional;
 import java.util.Set;
 
 public interface RegionAssignmentRepository extends JpaRepository<RegionAssignment, Long> {
+    @EntityGraph(attributePaths = {"region", "manager"})
+    @Query("""
+            select assignment from RegionAssignment assignment
+            where assignment.manager.active = true and assignment.manager.role.code = :role
+              and assignment.region.active = true and assignment.startDate <= :date
+              and (assignment.endDate is null or assignment.endDate >= :date)
+            order by assignment.manager.fullName, assignment.manager.id
+            """)
+    List<RegionAssignment> findActiveAssignments(LocalDate date, RoleCode role);
+
     @Query("select distinct assignment.manager.id from RegionAssignment assignment")
     Set<Long> findAssignedManagerIds();
 
