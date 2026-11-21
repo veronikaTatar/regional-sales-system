@@ -1,14 +1,20 @@
 package by.regsales.analytics;
 
 import by.regsales.common.CalendarPeriod;
+import by.regsales.security.AppPrincipal;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -21,12 +27,43 @@ import static by.regsales.analytics.AnalyticsDtos.*;
 @PreAuthorize("hasAnyRole('ANALYST', 'SALES_HEAD')")
 public class AnalyticsController {
     private final AnalyticsService analytics;
+    private final BelstatStatistics belstat;
+    private final BelstatSalaryClient salaryClient;
 
     @GetMapping("/statistics")
     @PreAuthorize("hasRole('ANALYST')")
     public Statistics statistics(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodStart,
                                  @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate periodEnd) {
         return analytics.statistics(new CalendarPeriod(periodStart, periodEnd));
+    }
+
+    @GetMapping("/statistics/latest")
+    @PreAuthorize("hasRole('ANALYST')")
+    public ResponseEntity<Statistics> latestStatistics() {
+        return belstat.latest().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/statistics/salaries")
+    @PreAuthorize("hasRole('ANALYST')")
+    public List<SalaryMonth> salaries() {
+        return belstat.monthlySalaries();
+    }
+
+    @PostMapping("/statistics/salaries/sync")
+    @PreAuthorize("hasRole('ANALYST')")
+    public SalaryDownloadResult syncSalaries(@RequestParam(required = false) Integer year, @AuthenticationPrincipal AppPrincipal actor) {
+        return belstat.saveMonthlySalaries(salaryClient.downloadYear(year), actor);
+    }
+
+    @PostMapping(value = "/statistics/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('ANALYST')")
+    public StatisticsImportResult importStatistics(@RequestParam MultipartFile salary,
+                                                   @RequestParam MultipartFile turnover,
+                                                   @RequestParam MultipartFile population,
+                                                   @RequestParam TurnoverUnit turnoverUnit,
+                                                   @RequestParam PopulationUnit populationUnit,
+                                                   @AuthenticationPrincipal AppPrincipal actor) {
+        return belstat.importLatest(salary, turnover, population, turnoverUnit, populationUnit, actor);
     }
 
     @GetMapping("/recommendations")

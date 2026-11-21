@@ -159,6 +159,9 @@ Cookie `REGSALES_SESSION` имеет `HttpOnly` и `SameSite=Lax`; её знач
 ### Аналитика
 
 - `GET /api/analytics/statistics?periodStart=2026-01-01&periodEnd=2026-03-31` доступен аналитику. Пока источник помечен `TRAINING`, значения подставляются из учебного набора. Период задаётся календарным месяцем или кварталом.
+- `POST /api/analytics/statistics/import` доступен аналитику и принимает multipart с тремя книгами XLSX в полях `salary`, `turnover` и `population`. Единицы задаются параметрами `turnoverUnit` со значениями `BYN` или `MILLION_BYN` и `populationUnit` со значениями `PEOPLE` или `THOUSAND_PEOPLE`. Ответ возвращает выбранный общий завершённый `year` и число `regions`.
+- `POST /api/analytics/statistics/salaries/sync?year=2026` загружает месячные выпуски выбранного года. Без `year` используется последний год в архиве. Ответ содержит `year`, число сохранённых `months` и ошибки отдельных выпусков в `issues`. `GET /api/analytics/statistics/salaries` возвращает сохранённые месяцы и ссылки на исходные XLSX.
+- `GET /api/analytics/statistics/latest` возвращает последние импортированные годовые показатели с источником `BELSTAT` или `204`, пока выгрузки нет. Расчёт плана выбирает последний загруженный год до начала планового периода, при отсутствии использует источник `TRAINING`.
 - `GET /api/analytics/recommendations` возвращает опубликованные рекомендации для аналитика и руководителя. `GET /api/analytics/recommendations/{planId}` возвращает сохранённые показатели, веса, ранжирование, версию метода и рекомендацию по выбранному плану.
 
 ## Google OpenID Connect

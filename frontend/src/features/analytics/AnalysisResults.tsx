@@ -1,13 +1,14 @@
 import { Link } from 'react-router-dom'
-import type { Calculation, Recommendation } from './types'
+import type { Calculation, Recommendation, StatisticsSource } from './types'
 
 export const indexFormat = new Intl.NumberFormat('ru-BY', { minimumFractionDigits: 3, maximumFractionDigits: 6 })
 export const indicatorFormat = new Intl.NumberFormat('ru-BY', { maximumFractionDigits: 2 })
 export const publicationDate = new Intl.DateTimeFormat('ru-BY', { timeZone: 'Europe/Minsk', dateStyle: 'medium' })
 const signedPercent = new Intl.NumberFormat('ru-BY', { maximumFractionDigits: 2, signDisplay: 'exceptZero' })
 
-export function TrainingSource() {
-  return <span className="mini-status analysis-source-label">Учебные данные</span>
+export function AnalysisSource({ source, periodStart }: { source: StatisticsSource; periodStart?: string }) {
+  return <span className="mini-status analysis-source-label">{source === 'TRAINING' ? 'Учебные данные'
+    : periodStart ? 'Белстат · ' + periodStart.slice(0, 4) : 'Белстат'}</span>
 }
 
 export function AnalysisMetrics({ index, share, adjustment }: { index: number; share: number; adjustment: number }) {
@@ -22,7 +23,7 @@ export function AnalysisRanking({ calculation, selectedRegionId }: { calculation
   return <section className="panel catalog-panel analysis-section" aria-label="Сравнение регионов">
     <div className="plan-section-top">
       <h2>Сравнение регионов</h2>
-      <TrainingSource/>
+      <AnalysisSource source={calculation.source} periodStart={calculation.periodStart}/>
     </div>
     <div className="table-scroll">
       <table className="product-table plan-list-table analysis-ranking">
@@ -50,7 +51,8 @@ export function AnalysisRanking({ calculation, selectedRegionId }: { calculation
       </table>
     </div>
     <p className="analysis-method-note">Веса в процентах · зарплата {indicatorFormat.format(calculation.weights.salary)} · оборот на жителя {indicatorFormat.format(calculation.weights.retail)} · население {indicatorFormat.format(calculation.weights.population)}<br/>
-      Средний индекс {indexFormat.format(calculation.averageIndex)}. Ставка рефинансирования {indicatorFormat.format(calculation.refinancingRate)} % приведена для справки.</p>
+      Средний индекс {indexFormat.format(calculation.averageIndex)}.
+      {calculation.refinancingRate != null && <> Ставка рефинансирования {indicatorFormat.format(calculation.refinancingRate)} % приведена для справки.</>}</p>
   </section>
 }
 
@@ -60,7 +62,7 @@ export function PlanRecommendation({ recommendation, linkToCalculation = false }
 }) {
   const { publication, sharePercent, priceAdjustmentPercent } = recommendation
   return <section className="panel plan-parameters analysis-section" aria-label="Рекомендация аналитика">
-    <div className="plan-parameters-heading"><h2>Рекомендация аналитика</h2><TrainingSource/></div>
+    <div className="plan-parameters-heading"><h2>Рекомендация аналитика</h2><AnalysisSource source={publication.source}/></div>
     <p className="analysis-author">{publication.author} · {publicationDate.format(new Date(publication.publishedAt))}</p>
     <AnalysisMetrics index={publication.index} share={sharePercent} adjustment={priceAdjustmentPercent}/>
     <p className="plan-comment">{publication.text}</p>

@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.DateTimeException;
 import java.time.LocalDate;
@@ -34,6 +36,13 @@ public final class XlsxReader {
     }
 
     public static <T> T readSheet(MultipartFile file, String sheetName, String missingFileMessage, Function<Sheet, T> parse) {
+        return readWorkbook(file, missingFileMessage, workbook -> {
+            var sheet = workbook.getSheet(sheetName);
+            return parse.apply(sheet == null ? workbook.getSheetAt(0) : sheet);
+        });
+    }
+
+    public static <T> T readWorkbook(MultipartFile file, String missingFileMessage, Function<Workbook, T> parse) {
         if (file == null || file.isEmpty()) throw invalid("FILE_REQUIRED", missingFileMessage);
         var filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
@@ -42,15 +51,33 @@ public final class XlsxReader {
         if (file.getSize() > MAX_BYTES) {
             throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "Размер файла должен быть не более 1 МБ");
         }
-        try (var input = file.getInputStream(); var workbook = new XSSFWorkbook(input)) {
+        try {
+            return readWorkbook(file.getInputStream(), parse);
+        } catch (IOException error) {
+            throw invalidWorkbook();
+        }
+    }
+
+    public static <T> T readWorkbook(byte[] bytes, Function<Workbook, T> parse) {
+        if (bytes.length > MAX_BYTES) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "Размер файла должен быть не более 1 МБ");
+        }
+        return readWorkbook(new ByteArrayInputStream(bytes), parse);
+    }
+
+    private static <T> T readWorkbook(InputStream data, Function<Workbook, T> parse) {
+        try (var input = data; var workbook = new XSSFWorkbook(input)) {
             if (workbook.getNumberOfSheets() == 0) throw invalid("EMPTY_WORKBOOK", "В книге нет листов");
-            var sheet = workbook.getSheet(sheetName);
-            return parse.apply(sheet == null ? workbook.getSheetAt(0) : sheet);
+            return parse.apply(workbook);
         } catch (ApiException error) {
             throw error;
         } catch (IOException | RuntimeException error) {
-            throw invalid("INVALID_WORKBOOK", "Не удалось прочитать книгу Excel. Сохраните её в формате XLSX и повторите загрузку");
+            throw invalidWorkbook();
         }
+    }
+
+    private static ApiException invalidWorkbook() {
+        return invalid("INVALID_WORKBOOK", "Не удалось прочитать книгу Excel. Проверьте формат XLSX");
     }
 
     public static <C extends Enum<C> & ColumnHeader> Map<C, Integer> readHeader(Row header, Class<C> type, DataFormatter formatter) {

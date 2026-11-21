@@ -4,7 +4,7 @@ import { Calculator, Send } from 'lucide-react'
 import { api, ApiError } from '../../api/client'
 import { normalizeDecimal, planCents } from '../plans/planFormat'
 import type { PlanSummary } from '../plans/types'
-import { AnalysisMetrics, AnalysisRanking, indicatorFormat, TrainingSource } from './AnalysisResults'
+import { AnalysisMetrics, AnalysisRanking, indicatorFormat } from './AnalysisResults'
 import type { Estimate, Weights } from './types'
 
 type AnalysisAction = 'preview' | 'publish'
@@ -69,7 +69,7 @@ export function PlanAnalysisForm({ plan, onSaved, onReload }: {
 
   return <>
     <section className="panel plan-parameters analysis-section" aria-labelledby="analysis-form-title">
-      <div className="plan-parameters-heading"><h2 id="analysis-form-title">Расчёт покупательной способности</h2><TrainingSource/></div>
+      <div className="plan-parameters-heading"><h2 id="analysis-form-title">Расчёт покупательной способности</h2></div>
       <form className="analysis-form" onSubmit={event => void save(event, 'preview')}>
         <fieldset className="analysis-weights" disabled={busy !== null || stale}>
           {weightFields.map(({ key, label }) => <label key={key} className="admin-field">

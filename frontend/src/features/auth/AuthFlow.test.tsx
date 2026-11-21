@@ -6,7 +6,7 @@ import { App } from '../../App'
 import { AuthProvider } from './AuthContext'
 import { resetCsrf } from '../../api/client'
 import type { User } from '../../types'
-const account:User={id:1,login:'manager',fullName:'Иван Иванов',email:'manager@example.by',role:'MANAGER',roleName:'Менеджер по продажам'}
+const account:User={id:1,login:'manager',fullName:'Иванов  Иван Иванович',email:'manager@example.by',role:'MANAGER',roleName:'Менеджер по продажам'}
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}})
 function setup(path='/login',authenticated=false){
   let signedIn=authenticated
@@ -40,7 +40,7 @@ describe('authentication user journeys',()=>{
     await user.type(await screen.findByLabelText('Логин'),'manager')
     await user.type(screen.getByLabelText('Пароль'),'correct-password')
     await user.click(screen.getByRole('button',{name:'Войти в систему'}))
-    expect(await screen.findByRole('heading',{name:'Здравствуйте, Иван'})).toBeInTheDocument()
+    expect(await screen.findByRole('heading',{name:'Здравствуйте, Иван Иванович'})).toBeInTheDocument()
     expect(requests[0]).toEqual({path:'/api/auth/login',body:{login:'manager',password:'correct-password'},csrf:'csrf-value'})
     await user.click(screen.getByRole('link',{name:'Открыть профиль'}))
     expect(await screen.findByRole('heading',{name:'Мой профиль'})).toBeInTheDocument()
@@ -77,7 +77,7 @@ describe('authentication user journeys',()=>{
     await user.type(screen.getByLabelText('Повторите пароль'),'correct-password')
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button',{name:'Создать учётную запись'}))
-    expect(await screen.findByRole('heading',{name:'Здравствуйте, Новый'})).toBeInTheDocument()
+    expect(await screen.findByRole('heading',{name:'Здравствуйте, Пользователь'})).toBeInTheDocument()
     expect(requests[0].body).toEqual({login:'new.manager',email:'new@example.by',fullName:'Новый Пользователь',password:'correct-password'})
   })
   it('blocks a direct administrator route for a manager',async()=>{

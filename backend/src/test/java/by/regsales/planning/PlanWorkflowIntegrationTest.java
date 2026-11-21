@@ -9,6 +9,7 @@ import by.regsales.domain.RegionAssignment;
 import by.regsales.domain.Role;
 import by.regsales.domain.RoleCode;
 import by.regsales.domain.Shipment;
+import by.regsales.domain.StatisticalIndicator;
 import by.regsales.repository.AnalyticalRecommendationRepository;
 import by.regsales.repository.AppUserRepository;
 import by.regsales.repository.PlanItemRepository;
@@ -20,14 +21,19 @@ import by.regsales.repository.RegionRepository;
 import by.regsales.repository.RegionalPlanRepository;
 import by.regsales.repository.RoleRepository;
 import by.regsales.repository.ShipmentRepository;
+import by.regsales.repository.RegionalStatisticRepository;
+import by.regsales.repository.StatisticalIndicatorRepository;
+import by.regsales.repository.StatisticsImportRepository;
 import by.regsales.security.AppPrincipal;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -35,6 +41,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -70,6 +77,9 @@ class PlanWorkflowIntegrationTest {
     @Autowired ShipmentRepository shipments;
     @Autowired AnalyticalRecommendationRepository recommendations;
     @Autowired PurchasingPowerCalculationRepository calculations;
+    @Autowired RegionalStatisticRepository regionalStatistics;
+    @Autowired StatisticsImportRepository statisticsImports;
+    @Autowired StatisticalIndicatorRepository indicators;
 
     @AfterEach void cleanPlanData() {
         planItems.deleteAllInBatch();
@@ -78,6 +88,8 @@ class PlanWorkflowIntegrationTest {
         calculations.deleteAllInBatch();
         prices.deleteAllInBatch();
         shipments.deleteAllInBatch();
+        regionalStatistics.deleteAllInBatch();
+        statisticsImports.deleteAllInBatch();
     }
 
     @Test void managerCompletesMissingSalesAndBuildsTheProjectAfterAnalysis() throws Exception {
@@ -152,14 +164,14 @@ class PlanWorkflowIntegrationTest {
 
         var statistics = get("/api/analytics/statistics").param("periodStart", "2026-01-01").param("periodEnd", "2026-03-31");
         mvc.perform(statistics.with(analyst)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.source").value("TRAINING")).andExpect(jsonPath("$.regions.length()").value(2));
+                .andExpect(jsonPath("$.source").value("TRAINING")).andExpect(jsonPath("$.regions[*].regionCode", hasItem("BY-HM")));
         var weights = Map.of("salary", 100, "retail", 0, "population", 0);
         var preview = path + "/analysis/preview";
         write(post(preview), head, Map.of("version", version(recorded), "weights", weights)).andExpect(status().isForbidden());
         write(post(preview), analyst, Map.of("version", version(recorded), "weights", Map.of("salary", 99, "retail", 0, "population", 0)))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.fieldErrors.weights").exists());
         write(post(preview), analyst, Map.of("version", version(recorded), "weights", weights)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.calculation.ranking.length()").value(2))
+                .andExpect(jsonPath("$.calculation.ranking[*].indicators.regionCode", hasItem("BY-HM")))
                 .andExpect(jsonPath("$.priceAdjustmentPercent").value(5.0));
 
         var conclusion = Map.of("version", version(recorded), "weights", weights, "recommendationText", "Увеличить план по розеткам");
@@ -386,6 +398,98 @@ class PlanWorkflowIntegrationTest {
         mvc.perform(get(path).with(head)).andExpect(status().isNotFound());
         assertThat(planItems.existsByRegionalPlanId(id)).isFalse();
         mvc.perform(get(PATH + "/" + replacement.get("id").asLong()).with(head)).andExpect(status().isOk());
+    }
+
+    @Test void importsTheLatestCompleteBelstatYearAndUsesItInPublishedAnalysis() throws Exception {
+        var head = as(account(RoleCode.SALES_HEAD));
+        var analyst = as(account(RoleCode.ANALYST));
+        var responsible = account(RoleCode.MANAGER);
+        var manager = as(responsible);
+        var region = region("BY-VI");
+        assign(responsible, region);
+        for (String code : List.of("BY-BR", "BY-HO", "BY-HR", "BY-MI", "BY-MA", "BY-HM")) region(code);
+        for (String code : List.of("ANNUAL_AVERAGE_SALARY", "ANNUAL_RETAIL_TURNOVER", "POPULATION")) {
+            var indicator = new StatisticalIndicator();
+            indicator.setCode(code);
+            indicator.setName(code);
+            indicator.setUnit("тест");
+            indicator.setPeriodicity("YEAR");
+            indicators.saveAndFlush(indicator);
+        }
+        int year = LocalDate.now(ZoneId.of("Europe/Minsk")).getYear() - 1;
+        var salary = annualWorkbook("salary", year, false, "2 540,5");
+        var turnover = annualWorkbook("turnover", year, true, "6000");
+        var population = annualWorkbook("population", year, false, "1000");
+        String endpoint = "/api/analytics/statistics";
+        var importRequest = multipart(endpoint + "/import").file(salary).file(turnover).file(population)
+                .param("turnoverUnit", "MILLION_BYN").param("populationUnit", "THOUSAND_PEOPLE");
+        mvc.perform(multipart(endpoint + "/import").file(salary).file(turnover).file(population)
+                .param("turnoverUnit", "MILLION_BYN").param("populationUnit", "THOUSAND_PEOPLE").with(manager).with(csrf()))
+                .andExpect(status().isForbidden());
+        mvc.perform(importRequest.with(analyst).with(csrf())).andExpect(status().isOk())
+                .andExpect(jsonPath("$.year").value(year)).andExpect(jsonPath("$.regions").value(7));
+        mvc.perform(multipart(endpoint + "/import").file(salary).file(turnover).file(population)
+                .param("turnoverUnit", "MILLION_BYN").param("populationUnit", "THOUSAND_PEOPLE").with(analyst).with(csrf()))
+                .andExpect(status().isOk());
+        assertThat(regionalStatistics.count()).isEqualTo(21);
+        assertThat(statisticsImports.count()).isEqualTo(2);
+        mvc.perform(get(endpoint + "/latest").with(analyst)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.source").value("BELSTAT"))
+                .andExpect(jsonPath("$.regions[0].averageSalary").value(2540.5))
+                .andExpect(jsonPath("$.regions[0].retailPerCapita").value(6000))
+                .andExpect(jsonPath("$.regions[0].population").value(1000000));
+
+        shipment(responsible, region, product(), year + "-12-31", "2", "4.10");
+        var parameters = parameters(region);
+        parameters.put("periodStart", (year + 1) + "-01-01");
+        parameters.put("periodEnd", (year + 1) + "-01-31");
+        parameters.put("managerId", responsible.getId());
+        parameters.put("requestAnalysis", true);
+        var plan = read(write(post(PATH), head, parameters).andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("AWAITING_ANALYSIS")));
+        var path = PATH + "/" + plan.get("id").asLong();
+        var weights = Map.of("salary", 40, "retail", 40, "population", 20);
+        write(post(path + "/analysis/preview"), analyst, Map.of("version", version(plan), "weights", weights))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.calculation.source").value("BELSTAT"))
+                .andExpect(jsonPath("$.calculation.periodStart").value(year + "-01-01"));
+        write(put(path + "/analysis"), analyst, Map.of("version", version(plan), "weights", weights,
+                "recommendationText", "Рекомендация по годовым данным")).andExpect(status().isOk());
+        mvc.perform(get("/api/analytics/recommendations").with(head)).andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].source").value("BELSTAT"));
+        mvc.perform(get("/api/analytics/recommendations/" + plan.get("id").asLong()).with(head)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.calculation.source").value("BELSTAT"));
+    }
+
+    private static MockMultipartFile annualWorkbook(String field, int year, boolean transposed, String value) throws Exception {
+        var names = List.of("Брестская область", "Витебская", "Гомельская", "Гродненская область",
+                "Минская область", "Могилёвская", "г.Минск");
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("Годовые показатели");
+            sheet.createRow(0).createCell(0).setCellValue("Тестовая таблица");
+            var header = sheet.createRow(1);
+            if (transposed) {
+                var values = sheet.createRow(2);
+                values.createCell(0).setCellValue(year);
+                for (int index = 0; index < names.size(); index++) {
+                    header.createCell(index + 1).setCellValue(names.get(index));
+                    values.createCell(index + 1).setCellValue(value);
+                }
+            } else {
+                header.createCell(1).setCellValue((year - 1) + " г.");
+                header.createCell(2).setCellValue(year);
+                header.createCell(3).setCellValue(year + 1);
+                for (int index = 0; index < names.size(); index++) {
+                    var row = sheet.createRow(index + 2);
+                    row.createCell(0).setCellValue(names.get(index));
+                    row.createCell(1).setCellValue("999");
+                    row.createCell(2).setCellValue(value);
+                    if (index == 0) row.createCell(3).setCellValue("123");
+                }
+            }
+            workbook.write(output);
+            return new MockMultipartFile(field, field + ".xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
+        }
     }
 
     private static Map<String, Object> parameters(Region region) {

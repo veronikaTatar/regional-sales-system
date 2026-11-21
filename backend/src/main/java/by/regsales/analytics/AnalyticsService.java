@@ -25,6 +25,7 @@ import static by.regsales.analytics.AnalyticsDtos.*;
 @Transactional(readOnly = true)
 public class AnalyticsService {
     private final TrainingStatistics source;
+    private final BelstatStatistics belstat;
     private final PurchasingPowerCalculationRepository calculations;
     private final AnalyticalRecommendationRepository recommendations;
     private final RegionalPlanRepository plans;
@@ -35,7 +36,8 @@ public class AnalyticsService {
     }
 
     public Statistics requireStatisticsFor(RegionalPlan plan) {
-        var statistics = source.read(plan.getPeriodStart(), plan.getPeriodEnd());
+        var statistics = belstat.latestThrough(plan.getPeriodStart().minusDays(1))
+                .orElseGet(() -> source.read(plan.getPeriodStart(), plan.getPeriodEnd()));
         var regionId = plan.getRegion().getId();
         if (statistics.regions().stream().noneMatch(row -> row.regionId().equals(regionId))) {
             throw noStatistics();
@@ -73,7 +75,10 @@ public class AnalyticsService {
 
     public List<Publication> history() {
         return plans.findByAnalyticalRecommendationIsNotNullOrderByPeriodStartDescIdDesc().stream()
-                .map(plan -> publication(plan, Source.TRAINING)).toList();
+                .map(plan -> {
+                    var snapshot = plan.getAnalyticalRecommendation().getPurchasingPowerCalculation().getInputSnapshot();
+                    return publication(plan, snapshot == null ? Source.TRAINING : readSnapshot(snapshot).source());
+                }).toList();
     }
 
     public PublishedCalculation published(Long planId) {
@@ -98,7 +103,7 @@ public class AnalyticsService {
     }
 
     private static ApiException noStatistics() {
-        return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_REGION_STATISTICS", "Для региона плана нет учебных показателей");
+        return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "NO_REGION_STATISTICS", "Для региона плана нет показателей");
     }
 
     private static Publication publication(RegionalPlan plan, Source source) {

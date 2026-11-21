@@ -4,21 +4,23 @@ export interface Weights {
   population: number
 }
 
+export type StatisticsSource = 'TRAINING' | 'BELSTAT'
+
 export interface RegionalIndicators {
   regionId: number
   regionCode: string
   regionName: string
   averageSalary: number
-  incomePerCapita: number
+  incomePerCapita: number | null
   retailPerCapita: number
   population: number
 }
 
 export interface Statistics {
-  source: 'TRAINING'
+  source: StatisticsSource
   periodStart: string
   periodEnd: string
-  refinancingRate: number
+  refinancingRate: number | null
   regions: RegionalIndicators[]
 }
 
@@ -47,7 +49,7 @@ export interface Publication {
   periodEnd: string
   publishedAt: string
   author: string
-  source: 'TRAINING'
+  source: StatisticsSource
   index: number
   text: string
 }
@@ -62,4 +64,21 @@ export interface PublishedCalculation {
   recommendation: Recommendation
   calculation: Calculation
   methodVersion: string
+}
+
+export interface StatisticsImportResult {
+  year: number
+  regions: number
+}
+
+export interface SalaryMonth {
+  period: string
+  sourceUrl: string | null
+  regions: { regionCode: string; regionName: string; averageSalary: number }[]
+}
+
+export interface SalaryDownloadResult {
+  year: number
+  months: number
+  issues: { period: string; message: string }[]
 }

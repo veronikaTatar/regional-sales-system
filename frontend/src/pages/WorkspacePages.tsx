@@ -10,7 +10,8 @@ export function PageHeading({ eyebrow, title, subtitle, children }: { eyebrow?: 
 export function Dashboard() {
   const { user } = useAuth()
   if (!user) return null
-  const name = user.fullName.split(' ')[0]
+  const nameParts = user.fullName.trim().split(/\s+/)
+  const name = nameParts.slice(1, 3).join(' ') || nameParts[0]
   const roleDescriptions = { ADMIN: 'Управляйте учётными записями, назначайте роли и контролируйте доступ сотрудников.', MANAGER: 'Ваши регионы, продукция и продажи — в едином рабочем пространстве.', ANALYST: 'Превращайте региональную статистику в основу обоснованных решений.', SALES_HEAD: 'Планируйте региональные продажи и контролируйте результаты команды.' }
   const available = pages.filter(page => page.roles.includes(user.role) && !['/','/profile'].includes(page.path))
   return <>

@@ -1,6 +1,6 @@
 import { Link, useSearchParams } from 'react-router-dom'
 import { Loading } from '../components/Loading'
-import { AnalysisRanking, indexFormat, PlanRecommendation, publicationDate, TrainingSource } from '../features/analytics/AnalysisResults'
+import { AnalysisRanking, AnalysisSource, indexFormat, PlanRecommendation, publicationDate } from '../features/analytics/AnalysisResults'
 import type { Publication, PublishedCalculation } from '../features/analytics/types'
 import { formatPeriod } from '../features/plans/planFormat'
 import { useResource } from '../hooks/useResource'
@@ -24,14 +24,14 @@ export function AnalyticsPage({ history = false }: { history?: boolean }) {
       <p>Расчёт появится здесь после передачи рекомендации менеджеру.</p>
     </section>}
     {history && rows.length > 0 && !publications.error && <section className="panel catalog-panel" aria-label="Журнал рекомендаций">
-      <div className="plan-section-top"><h2>Журнал рекомендаций</h2><TrainingSource/></div>
+      <div className="plan-section-top"><h2>Журнал рекомендаций</h2></div>
       <div className="table-scroll">
         <table className="product-table plan-list-table analysis-rankings-history">
           <thead><tr><th scope="col">Регион и период</th><th scope="col">Рекомендация</th><th scope="col">Индекс</th><th scope="col">Действия</th></tr></thead>
           <tbody>{rows.map(row => <tr key={row.planId}>
             <td><strong>{row.regionName}</strong><small className="cell-secondary plan-nowrap">{formatPeriod(row.periodStart, row.periodEnd)}</small></td>
             <td className="analysis-history-text"><p>{row.text}</p><small className="cell-secondary">{row.author} · {publicationDate.format(new Date(row.publishedAt))}</small></td>
-            <td>{indexFormat.format(row.index)}</td>
+            <td>{indexFormat.format(row.index)}<small className="cell-secondary"><AnalysisSource source={row.source}/></small></td>
             <td><Link className="text-button" to={'/plans/' + row.planId}>К плану</Link></td>
           </tr>)}</tbody>
         </table>

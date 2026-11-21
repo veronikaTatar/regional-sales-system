@@ -17,7 +17,21 @@ import java.util.List;
 public final class AnalyticsDtos {
     private AnalyticsDtos() {}
 
-    public enum Source { TRAINING }
+    public enum Source { TRAINING, BELSTAT }
+
+    public enum TurnoverUnit { BYN, MILLION_BYN }
+
+    public enum PopulationUnit { PEOPLE, THOUSAND_PEOPLE }
+
+    public record StatisticsImportResult(int year, int regions) {}
+
+    public record RegionalSalary(String regionCode, String regionName, BigDecimal averageSalary) {}
+
+    public record SalaryMonth(String period, String sourceUrl, List<RegionalSalary> regions) {}
+
+    public record SalaryDownloadIssue(String period, String message) {}
+
+    public record SalaryDownloadResult(int year, int months, List<SalaryDownloadIssue> issues) {}
 
     public record Weights(
             @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 2) BigDecimal salary,
