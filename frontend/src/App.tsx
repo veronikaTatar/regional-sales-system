@@ -13,6 +13,7 @@ import { PlansPage } from './pages/PlansPage'
 import { PlanDetailPage } from './pages/PlanDetailPage'
 import { AdministrationPage } from './pages/AdministrationPage'
 import { AnalyticsPage } from './pages/AnalyticsPage'
+import { AnalystDirectoriesPage, AnalystTasksPage, SalesAnalysisPage } from './pages/AnalystPages'
 import { ReportsPage } from './pages/ReportsPage'
 import { StatisticsPage } from './pages/StatisticsPage'
 import type { Role } from './types'
@@ -28,13 +29,17 @@ function RoleGuard({roles,children}: {roles:Role[];children:React.ReactNode}) {
   return user&&roles.includes(user.role) ? children : <ForbiddenPage/>
 }
 export function App() {
-  const {loading}=useAuth()
+  const {loading,user}=useAuth()
   if (loading) return <div className="boot-screen"><Loading label="Подключаем рабочее пространство…"/></div>
+  const analyst = user?.role === 'ANALYST'
   const content: Record<string,React.ReactNode> = {
     '/': <Dashboard/>, '/profile': <ProfilePage/>, '/products': <ProductsPage/>, '/regions': <RegionsPage/>,
     '/shipments': <ShipmentsPage/>, '/administration': <AdministrationPage/>,
-    '/plans': <PlansPage/>, '/approvals': <PlansPage mode="review"/>, '/purchasing-power': <PlansPage mode="analysis"/>,
-    '/statistics': <StatisticsPage/>, '/analytics': <AnalyticsPage/>, '/recommendations': <AnalyticsPage history/>, '/reports': <ReportsPage/>,
+    '/plans': <PlansPage/>, '/approvals': <PlansPage mode="review"/>, '/purchasing-power': <AnalystTasksPage/>,
+    '/statistics': <StatisticsPage/>, '/analytics': analyst ? <SalesAnalysisPage/> : <AnalyticsPage/>,
+    '/recommendations': analyst ? <Navigate to="/purchasing-power?tab=recommendations" replace/> : <AnalyticsPage history/>,
+    '/reports': analyst ? <Navigate to="/analytics?tab=plan-fact" replace/> : <ReportsPage/>,
+    '/directories': <AnalystDirectoriesPage/>,
   }
   return (
     <Routes>

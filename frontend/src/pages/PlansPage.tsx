@@ -10,7 +10,7 @@ import type { PlanSummary } from '../features/plans/types'
 import { useResource } from '../hooks/useResource'
 import { PageHeading } from './WorkspacePages'
 
-export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'analysis' }) {
+export function PlansPage({ mode = 'plans', embedded = false }: { mode?: 'plans' | 'review' | 'analysis'; embedded?: boolean }) {
   const { user } = useAuth()
   const plans = useResource<PlanSummary[]>(mode === 'plans' ? '/plans' : '/plans?attention=true', true)
   const navigate = useNavigate()
@@ -24,17 +24,17 @@ export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'ana
     plans: { title: 'Региональные планы', subtitle: user?.role === 'MANAGER'
       ? 'Задания и проекты планов по вашим регионам.' : 'Параметры планирования и проекты региональных планов.', list: 'Планы продаж', empty: 'Планов пока нет' },
     review: { title: 'Согласование планов', subtitle: 'Проекты с результатами проверки плановых показателей.', list: 'На согласовании', empty: 'Планов на согласовании нет' },
-    analysis: { title: 'Покупательная способность', subtitle: 'Задания на расчёт индекса и подготовку рекомендации.', list: 'Задания на анализ', empty: 'Заданий на анализ пока нет' },
+    analysis: { title: 'Задания на анализ', subtitle: 'Региональные планы, ожидающие рекомендации аналитика.', list: 'К анализу', empty: 'Заданий на анализ пока нет' },
   }[mode]
 
   return <>
-    <PageHeading eyebrow={mode === 'analysis' ? 'АНАЛИТИКА' : 'ПЛАНИРОВАНИЕ'} title={heading.title} subtitle={heading.subtitle}>
+    {!embedded && <PageHeading eyebrow={mode === 'analysis' ? undefined : 'ПЛАНИРОВАНИЕ'} title={heading.title} subtitle={heading.subtitle}>
       {manage && (
         <button type="button" className="button button-primary plan-create" onClick={() => setCreating(true)}>
           <Plus size={17} aria-hidden="true"/>Новый план
         </button>
       )}
-    </PageHeading>
+    </PageHeading>}
     {notice && <p className="alert admin-success" role="status">{notice}</p>}
     {plans.error && <div className="alert alert-error" role="alert">
       {plans.error}<button type="button" className="text-button" onClick={() => void plans.refresh()}>Повторить</button>
@@ -53,7 +53,7 @@ export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'ana
                 <th scope="col">Период</th>
                 {user?.role === 'SALES_HEAD' && <th scope="col">Менеджер</th>}
                 <th scope="col" className="numeric">Цель, BYN</th>
-                <th scope="col" className="numeric">План, BYN</th>
+                {mode !== 'analysis' && <th scope="col" className="numeric">План, BYN</th>}
                 <th scope="col">Статус</th>
                 <th scope="col">Действия</th>
               </tr></thead>
@@ -63,10 +63,10 @@ export function PlansPage({ mode = 'plans' }: { mode?: 'plans' | 'review' | 'ana
                   <td className="plan-nowrap">{formatPeriod(plan.periodStart, plan.periodEnd)}</td>
                   {user?.role === 'SALES_HEAD' && <td>{plan.manager?.name ?? '—'}</td>}
                   <td className="numeric plan-nowrap">{formatPlanMoney(plan.targetRevenue)}</td>
-                  <td className="numeric plan-nowrap">{formatPlanMoney(plan.plannedRevenue)}</td>
+                  {mode !== 'analysis' && <td className="numeric plan-nowrap">{formatPlanMoney(plan.plannedRevenue)}</td>}
                   <td><span className={'mini-status plan-status-' + plan.status.toLowerCase()}>{planStatusLabel(plan)}</span></td>
                   <td><div className="plan-row-actions">
-                    <Link className="text-button" to={'/plans/' + plan.id}>{mode === 'analysis' ? 'К расчёту' : 'Открыть'}</Link>
+                    <Link className="text-button" to={'/plans/' + plan.id + (mode === 'analysis' ? '?tab=analysis' : '')}>{mode === 'analysis' ? 'Открыть задание' : 'Открыть'}</Link>
                     {manage && plan.status !== 'APPROVED' && <>
                       {plan.status !== 'CANCELLED' && plan.status !== 'REJECTED' && <button type="button" className="text-button danger-text" disabled={plans.loading}
                         onClick={() => setRemoval({ plan, action: 'cancel' })}>Отменить</button>}

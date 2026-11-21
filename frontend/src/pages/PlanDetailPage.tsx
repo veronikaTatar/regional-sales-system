@@ -1,23 +1,29 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, Check, Pencil, Send, Undo2 } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import { Loading } from '../components/Loading'
+import { WorkspaceTabs } from '../components/WorkspaceTabs'
 import { PlanRecommendation } from '../features/analytics/AnalysisResults'
 import { PlanAnalysisForm } from '../features/analytics/PlanAnalysisForm'
+import { PlanRegionIndicators } from '../features/analytics/PlanRegionIndicators'
+import { rememberPlan } from '../features/analytics/recentPlans'
+import { ShipmentAnalysis } from '../features/analytics/ShipmentAnalysis'
 import { useAuth } from '../features/auth/AuthContext'
 import { PlanEditor } from '../features/plans/PlanEditor'
 import { PlanItemsEditor } from '../features/plans/PlanItemsEditor'
 import { PlanReviewDialog } from '../features/plans/PlanReviewDialog'
-import { formatGoalProgress, formatPeriod, formatPlanMoney, formatPlanQuantity, planCents, planStatusLabel } from '../features/plans/planFormat'
+import { formatCents, formatGoalProgress, formatPeriod, formatPlanMoney, formatPlanQuantity, planCents, planStatusLabel } from '../features/plans/planFormat'
 import type { PlanDecision, PlanDetail, PlanSummary } from '../features/plans/types'
 import { useResource } from '../hooks/useResource'
 import { PageHeading } from './WorkspacePages'
+import { PublishedAnalysis } from './AnalyticsPage'
 
 const approvalDate = new Intl.DateTimeFormat('ru-BY', { timeZone: 'Europe/Minsk', dateStyle: 'medium' })
 
 export function PlanDetailPage() {
   const { id } = useParams()
+  const [params] = useSearchParams()
   const { user } = useAuth()
   const { data: detail, error, loading, refresh } = useResource<PlanDetail>('/plans/' + id, true)
   const [dialog, setDialog] = useState<'EDIT' | PlanDecision | null>(null)
@@ -26,6 +32,11 @@ export function PlanDetailPage() {
   const [pendingAction, setPendingAction] = useState<'sales' | 'withdraw' | null>(null)
   const [actionError, setActionError] = useState('')
   const analyst = user?.role === 'ANALYST'
+  const userId = user?.id
+  const openedPlan = detail?.plan
+  useEffect(() => {
+    if (analyst && userId !== undefined && openedPlan?.id === Number(id)) rememberPlan(userId, openedPlan)
+  }, [analyst, id, openedPlan, userId])
   const back = <Link to={analyst ? '/purchasing-power' : '/plans'} className="button button-secondary">
     <ArrowLeft size={16} aria-hidden="true"/>{analyst ? 'К заданиям' : 'К планам'}</Link>
 
@@ -37,6 +48,11 @@ export function PlanDetailPage() {
   </>
   if (!detail || detail.plan.id !== Number(id)) return <Loading label="Загружаем план…"/>
   const plan = failedCheck?.id === detail.plan.id && failedCheck.version > detail.plan.version ? failedCheck : detail.plan
+  const requestedTab = params.get('tab')
+  const tab = requestedTab === 'analysis' || requestedTab === 'results' || requestedTab === 'task'
+    ? requestedTab : detail.canAnalyze || detail.recommendation ? 'analysis' : 'task'
+  const showTask = !analyst || tab === 'task'
+  const showResults = !analyst || tab === 'results'
   const progress = formatGoalProgress(planCents(plan.plannedRevenue), plan.targetRevenue)
   const waitingForSales = plan.status === 'SALES_REVISION' || plan.status === 'AWAITING_SALES_DATA'
   const managerWaiting = user?.role === 'MANAGER' && (waitingForSales || plan.status === 'AWAITING_ANALYSIS')
@@ -117,15 +133,21 @@ export function PlanDetailPage() {
         </>}
       </div>
     </PageHeading>
+    {analyst && <WorkspaceTabs label="Карточка регионального плана" active={tab} items={[
+      { id: 'task', title: 'Задание', to: '?tab=task' },
+      { id: 'analysis', title: 'Анализ и рекомендация', to: '?tab=analysis' },
+      { id: 'results', title: 'План и факт', to: '?tab=results' },
+    ]}/>}
     {notice && <p className="alert admin-success" role="status">{notice}</p>}
     {actionError && <div className="alert alert-error" role="alert">{actionError}</div>}
-    <section className="panel plan-parameters" aria-labelledby="plan-parameters-heading">
+    {showTask && <section className="panel plan-parameters" aria-labelledby="plan-parameters-heading">
       <div className="plan-parameters-heading">
         <h2 id="plan-parameters-heading">Задание</h2>
         <span className={'mini-status plan-status-' + plan.status.toLowerCase()}>{planStatusLabel(plan)}</span>
       </div>
       <dl>
         <div><dt>Менеджер</dt><dd>{plan.manager?.name ?? 'Ожидает назначения'}</dd></div>
+        {analyst && <div><dt>Целевая выручка</dt><dd>{formatPlanMoney(plan.targetRevenue)}{plan.targetRevenue !== null && ' BYN'}</dd></div>}
         {detail.budgetLimit !== null && <div><dt>Лимит затрат</dt><dd>{formatPlanMoney(detail.budgetLimit)} BYN</dd></div>}
         {detail.maxDiscountPercent !== null && (
           <div><dt>Максимальная скидка</dt><dd>{formatPlanQuantity(detail.maxDiscountPercent)} %</dd></div>
@@ -140,9 +162,9 @@ export function PlanDetailPage() {
           : plan.status === 'REJECTED' ? 'Причина отказа' : 'Замечание руководителя'}</strong>
         <p className="plan-comment">{detail.reviewComment}</p>
       </div>}
-    </section>
+    </section>}
 
-    {sales && <section className="panel plan-parameters analysis-section" aria-label="Сведения о продажах">
+    {showTask && sales && <section className="panel plan-parameters analysis-section" aria-label="Сведения о продажах">
       <div className="plan-parameters-heading"><h2>Сведения о продажах</h2></div>
       <dl>
         <div><dt>Отчётный период</dt><dd>{formatPeriod(sales.period.from, sales.period.to)}</dd></div>
@@ -163,10 +185,10 @@ export function PlanDetailPage() {
       </div>}
     </section>}
 
-    <div className="plan-metrics">
+    {showResults && <div className="plan-metrics">
       <article className="panel plan-metric"><span>Целевая выручка</span>
         <strong>{formatPlanMoney(plan.targetRevenue)}{plan.targetRevenue !== null ? ' BYN' : ''}</strong></article>
-      <article className="panel plan-metric"><span>Плановая выручка</span>
+      <article className="panel plan-metric"><span>{analyst && plan.status !== 'APPROVED' ? 'Выручка по проекту' : 'Плановая выручка'}</span>
         <strong>{formatPlanMoney(plan.plannedRevenue)} BYN</strong><small>{progress} от цели</small></article>
       <article className="panel plan-metric"><span>Факт прошлого периода</span>
         <strong>{formatPlanMoney(detail.previous.revenue)} BYN</strong>
@@ -174,19 +196,33 @@ export function PlanDetailPage() {
       {detail.actual && <article className="panel plan-metric"><span>Факт планового периода</span>
         <strong>{formatPlanMoney(detail.actual.revenue)} BYN</strong>
         <small>{formatPeriod(detail.actual.from, detail.actual.to)}</small></article>}
-    </div>
+      {analyst && detail.actual && <article className="panel plan-metric"><span>Отклонение от плана</span>
+        <strong>{formatCents(planCents(detail.actual.revenue) - planCents(plan.plannedRevenue))} BYN</strong>
+        <small>Выполнение {formatGoalProgress(planCents(detail.actual.revenue), plan.plannedRevenue)}</small></article>}
+    </div>}
 
-    {detail.recommendation && <PlanRecommendation recommendation={detail.recommendation} linkToCalculation={user?.role !== 'MANAGER'}/>}
-    {detail.planningCheck && <section className="panel plan-parameters analysis-section" aria-label="Результат проверки проекта">
+    {analyst && tab === 'analysis' && <>
+      <ShipmentAnalysis key={plan.id + ':' + detail.previous.from + ':' + detail.previous.to}
+        region={{ id: plan.regionId, name: plan.regionName, from: detail.previous.from, to: detail.previous.to }}/>
+      <PlanRegionIndicators key={plan.id} regionId={plan.regionId} regionName={plan.regionName} through={detail.previous.to}/>
+      {detail.recommendation && <PublishedAnalysis key={plan.id + '-' + plan.version} planId={plan.id} inPlan/>}
+      {!detail.canAnalyze && !detail.recommendation && <p className="panel plan-parameters">Рекомендация по этому плану пока не подготовлена.</p>}
+    </>}
+
+    {!analyst && detail.recommendation && <PlanRecommendation recommendation={detail.recommendation} linkToCalculation={user?.role !== 'MANAGER'}/>}
+    {showResults && detail.planningCheck && <section className="panel plan-parameters analysis-section" aria-label="Результат проверки проекта">
       <div className="plan-parameters-heading"><h2>Результат проверки проекта</h2></div>
       <p className="plan-comment">{detail.planningCheck}</p>
     </section>}
-    {plan.validationNote && !waitingForSales && <div className="alert alert-error plan-validation-note" role="alert">
+    {showResults && plan.validationNote && !waitingForSales && <div className="alert alert-error plan-validation-note" role="alert">
       <strong>Ошибки проверки позиций</strong>
       <p>{plan.validationNote}</p>
     </div>}
-    {detail.canAnalyze && <PlanAnalysisForm key={plan.id + '-' + plan.version} plan={plan} onSaved={onSaved} onReload={refresh}/>}
-    {(detail.canEditItems || detail.items.length > 0 || managerWaiting) && <section id="plan-items" className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
+    {detail.canAnalyze && <div hidden={analyst && tab !== 'analysis'}>
+      <PlanAnalysisForm key={plan.id + '-' + plan.version} plan={plan} onSaved={onSaved} onReload={refresh}/>
+    </div>}
+    {analyst && showResults && !detail.items.length && <p className="panel plan-parameters">Менеджер ещё не добавил позиции плана.</p>}
+    {showResults && (detail.canEditItems || detail.items.length > 0 || managerWaiting) && <section id="plan-items" className="panel catalog-panel" aria-label="Товарные позиции плана" aria-busy={loading}>
       {detail.canEditItems ? (
         <PlanItemsEditor key={plan.id + '-' + detail.plan.version} detail={{ ...detail, plan }} onSaved={onSaved} onReload={refresh}/>
       ) : <>
@@ -205,6 +241,7 @@ export function PlanDetailPage() {
                 <th scope="col" className="numeric">Плановая цена, BYN</th>
                 <th scope="col" className="numeric">Плановая сумма, BYN</th>
                 {detail.actual && <th scope="col" className="numeric">Факт планового периода</th>}
+                {analyst && detail.actual && <th scope="col" className="numeric">Отклонение, BYN</th>}
               </tr></thead>
               <tbody>
                 {detail.items.map(item => <tr key={item.productId}>
@@ -216,6 +253,9 @@ export function PlanDetailPage() {
                   <td className="numeric plan-nowrap">{formatPlanMoney(item.plannedAmount)}</td>
                   {item.actual && <td className="numeric plan-nowrap">{formatPlanQuantity(item.actual.quantity)} {item.unit}
                     <small className="cell-secondary">{formatPlanMoney(item.actual.revenue)} BYN</small></td>}
+                  {analyst && detail.actual && <td className="numeric plan-nowrap">
+                    {formatCents(planCents(item.actual?.revenue ?? '0') - planCents(item.plannedAmount))}
+                  </td>}
                 </tr>)}
               </tbody>
             </table>

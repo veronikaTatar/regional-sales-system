@@ -18,7 +18,7 @@ export function StatisticsPage() {
   const [notice, setNotice] = useState('')
 
   return <>
-    <PageHeading eyebrow="АНАЛИТИКА" title="Статистика" subtitle="Региональные показатели Белстата и официальные курсы валют Нацбанка."/>
+    <PageHeading title="Внешние данные" subtitle="Региональные показатели Белстата и официальные курсы валют Нацбанка."/>
     <nav className="statistics-navigation" aria-label="Разделы статистики">
       <a href="#belstat-salaries">Средняя зарплата</a>
       <a href="#belstat-turnover">Розничный товарооборот</a>

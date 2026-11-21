@@ -127,6 +127,32 @@ class ShipmentIntegrationTest {
         assertThat(shipments.count()).isOne();
     }
 
+    @Test void summarizesMatchingShipmentsAndThePrecedingCalendarMonthForAnalysts() throws Exception {
+        var assigned = region("Минск");
+        var foreign = region("Брест");
+        var manager = as(manager(assigned));
+        var other = as(manager(foreign));
+        var analyst = as(account(RoleCode.ANALYST));
+        var product = product("Розетка");
+        var another = product("Лампа");
+        register(manager, assigned, product, "2024-03-03", "M-03-1", "2.5", "12.35").andExpect(status().isCreated());
+        register(manager, assigned, product, "2024-03-04", "M-03-2", "1", "2").andExpect(status().isCreated());
+        register(manager, assigned, product, "2024-02-29", "M-02-1", "3", "5").andExpect(status().isCreated());
+        register(manager, assigned, another, "2024-03-03", "M-03-3", "4", "5").andExpect(status().isCreated());
+        register(other, foreign, product, "2024-03-03", "B-03-1", "9", "5").andExpect(status().isCreated());
+
+        mvc.perform(get(PATH + "/summary").with(analyst).param("regionId", assigned.getId().toString())
+                        .param("productId", product.getId().toString()).param("from", "2024-03-01").param("to", "2024-03-31"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.current.rows.length()").value(1))
+                .andExpect(jsonPath("$.current.rows[0].month").value("2024-03"))
+                .andExpect(jsonPath("$.current.rows[0].shipmentCount").value(2))
+                .andExpect(jsonPath("$.current.rows[0].revenue").value("32.88"))
+                .andExpect(jsonPath("$.previous.from").value("2024-02-01"))
+                .andExpect(jsonPath("$.previous.to").value("2024-02-29"))
+                .andExpect(jsonPath("$.previous.rows[0].revenue").value("15.00"));
+        mvc.perform(get(PATH + "/summary").with(manager)).andExpect(status().isForbidden());
+    }
+
     @Test void rejectsUnauthorizedWritesAndAmountsThatExceedDatabasePrecision() throws Exception {
         var assigned = region("Минск");
         var foreign = region("Брест");

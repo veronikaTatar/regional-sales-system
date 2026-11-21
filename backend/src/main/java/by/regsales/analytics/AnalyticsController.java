@@ -42,8 +42,10 @@ public class AnalyticsController {
 
     @GetMapping("/statistics/latest")
     @PreAuthorize("hasRole('ANALYST')")
-    public ResponseEntity<Statistics> latestStatistics() {
-        return belstat.latest().map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
+    public ResponseEntity<Statistics> latestStatistics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate through) {
+        var statistics = through == null ? belstat.latest() : belstat.latestThrough(through);
+        return statistics.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/statistics/salaries")

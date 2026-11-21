@@ -42,7 +42,7 @@ function compareProducts(left: Product, right: Product, field: SortField) {
   return collator.compare(left[field] ?? '', right[field] ?? '')
 }
 
-export function ProductsPage() {
+export function ProductsPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth()
   const manager = user?.role === 'MANAGER'
   const { data, loading, error, refresh } = useResource<Product[] | ManagedCatalog>(
@@ -160,7 +160,7 @@ export function ProductsPage() {
   }
 
   return <>
-    <PageHeading eyebrow="ПРОДАЖИ" title="Продукция" subtitle="Справочник товаров предприятия. Отпускные цены указаны в BYN без НДС.">
+    {!embedded && <PageHeading eyebrow="ПРОДАЖИ" title="Продукция" subtitle="Справочник товаров предприятия. Отпускные цены указаны в BYN без НДС.">
       {canManage && (
         <div className="product-page-actions">
           <Link className="button button-secondary" to={priceHistoryPage.path}>
@@ -178,7 +178,7 @@ export function ProductsPage() {
           </button>
         </div>
       )}
-    </PageHeading>
+    </PageHeading>}
     {managed && !managed.canManage && (
       <p className="alert product-access-note">Для ведения каталога администратор должен закрепить за вами регион на текущую дату.</p>
     )}

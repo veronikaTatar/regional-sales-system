@@ -18,10 +18,12 @@ import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 @Component
 public class NbrbExchangeRates {
     private static final ZoneId MINSK = ZoneId.of("Europe/Minsk");
+    private static final Set<String> SELECTED_CURRENCIES = Set.of("USD", "EUR", "CNY", "RUB");
     private final RestClient client;
 
     @Autowired
@@ -56,6 +58,7 @@ public class NbrbExchangeRates {
         }
 
         var currencies = Arrays.stream(rates)
+                .filter(rate -> SELECTED_CURRENCIES.contains(rate.code()))
                 .map(rate -> new ExchangeRate(rate.code(), rate.name(), rate.scale(), rate.rate()))
                 .sorted(Comparator.comparing(ExchangeRate::currencyCode))
                 .toList();

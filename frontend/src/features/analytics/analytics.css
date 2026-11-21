@@ -179,3 +179,116 @@
 .analysis-report-filter {
   max-width: 100%;
 }
+
+.workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 5px;
+  margin-bottom: 16px;
+  background: #eaf0f0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.workspace-tabs a {
+  padding: 9px 13px;
+  color: #45606a;
+  font-size: 12px;
+  font-weight: 650;
+  border-radius: 5px;
+}
+
+.workspace-tabs a[aria-current="page"] {
+  background: white;
+  color: #117668;
+  box-shadow: 0 1px 3px #17374016;
+}
+
+.analysis-list-filters,
+.shipment-analysis-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.shipment-analysis-fields {
+  margin-top: 12px;
+}
+
+.shipment-analysis-fields label {
+  flex: 1 1 135px;
+  min-width: 0;
+}
+
+.shipment-analysis-fields select {
+  width: 100%;
+}
+
+.shipment-analysis-fields input {
+  min-width: 0;
+  width: 100%;
+}
+
+.shipment-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  align-items: start;
+  gap: 14px;
+}
+
+.metric-chart h3 {
+  font-size: 13px;
+}
+
+.metric-chart ul {
+  list-style: none;
+  margin: 13px 0 0;
+  padding: 0;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.metric-chart li {
+  display: grid;
+  grid-template-columns: minmax(6em, 1.2fr) minmax(28px, 2fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  font-size: 11px;
+}
+
+.metric-chart .text-button {
+  text-align: left;
+  padding: 0;
+}
+
+.metric-chart strong {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.metric-track,
+.metric-track span {
+  display: block;
+  height: 8px;
+  border-radius: 5px;
+}
+
+.metric-track {
+  background: #e9efef;
+}
+
+.metric-track span {
+  background: #358c7b;
+}
+
+.metric-track .metric-negative {
+  background: #a95954;
+}
+
+.region-series-select {
+  max-width: 350px;
+  margin-top: 16px;
+}

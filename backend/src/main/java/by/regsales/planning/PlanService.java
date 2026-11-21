@@ -41,9 +41,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.YearMonth;
 import java.time.ZoneId;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -476,7 +474,7 @@ public class PlanService {
     }
 
     private Facts previousFacts(RegionalPlan plan) {
-        return facts(plan, previousStart(plan), plan.getPeriodStart().minusDays(1));
+        return facts(plan, CalendarPeriod.precedingStart(plan.getPeriodStart(), plan.getPeriodEnd()), plan.getPeriodStart().minusDays(1));
     }
 
     private static SalesSubmission salesSubmission(RegionalPlan plan, Facts previous) {
@@ -495,15 +493,6 @@ public class PlanService {
                 total -> new Sales(total.getQuantity(), total.getRevenue())));
         var shipmentCount = totals.stream().mapToLong(ShipmentRepository.ProductTotal::getShipmentCount).sum();
         return new Facts(new SalesPeriod(from, to, revenue), byProduct, shipmentCount);
-    }
-
-    private static LocalDate previousStart(RegionalPlan plan) {
-        var start = plan.getPeriodStart();
-        var end = plan.getPeriodEnd();
-        if (start.getDayOfMonth() == 1 && end.getDayOfMonth() == end.lengthOfMonth()) {
-            return start.minusMonths(ChronoUnit.MONTHS.between(YearMonth.from(start), YearMonth.from(end)) + 1);
-        }
-        return start.minusDays(ChronoUnit.DAYS.between(start, end) + 1);
     }
 
     private Summary summary(RegionalPlan plan) {

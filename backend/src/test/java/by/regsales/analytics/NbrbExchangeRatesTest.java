@@ -31,17 +31,26 @@ class NbrbExchangeRatesTest {
     }
 
     @Test
-    void preservesOfficialRateAndCurrencyUnitsForRequestedDate() {
+    void returnsOnlySelectedCurrenciesAndPreservesOfficialUnits() {
         server.expect(requestTo(URL)).andRespond(withSuccess("""
                 [{"Cur_ID":456,"Date":"2026-01-15T00:00:00","Cur_Abbreviation":"RUB",
-                  "Cur_Scale":100,"Cur_Name":"Российских рублей","Cur_OfficialRate":3.6254}]
+                  "Cur_Scale":100,"Cur_Name":"Российских рублей","Cur_OfficialRate":3.6254},
+                 {"Date":"2026-01-15T00:00:00","Cur_Abbreviation":"USD",
+                  "Cur_Scale":1,"Cur_Name":"Доллар США","Cur_OfficialRate":3.1},
+                 {"Date":"2026-01-15T00:00:00","Cur_Abbreviation":"GBP",
+                  "Cur_Scale":1,"Cur_Name":"Фунт стерлингов","Cur_OfficialRate":4.1},
+                 {"Date":"2026-01-15T00:00:00","Cur_Abbreviation":"CNY",
+                  "Cur_Scale":10,"Cur_Name":"Китайских юаней","Cur_OfficialRate":4.3},
+                 {"Date":"2026-01-15T00:00:00","Cur_Abbreviation":"EUR",
+                  "Cur_Scale":1,"Cur_Name":"Евро","Cur_OfficialRate":3.5}]
                 """, MediaType.APPLICATION_JSON));
 
         var result = rates.onDate(DATE);
 
         assertThat(result.date()).isEqualTo(DATE);
-        assertThat(result.rates()).singleElement().satisfies(rate -> {
-            assertThat(rate.currencyCode()).isEqualTo("RUB");
+        assertThat(result.rates()).extracting(NbrbExchangeRates.ExchangeRate::currencyCode)
+                .containsExactly("CNY", "EUR", "RUB", "USD");
+        assertThat(result.rates()).filteredOn(rate -> rate.currencyCode().equals("RUB")).singleElement().satisfies(rate -> {
             assertThat(rate.units()).isEqualTo(100);
             assertThat(rate.rateByn()).isEqualByComparingTo("3.6254");
         });

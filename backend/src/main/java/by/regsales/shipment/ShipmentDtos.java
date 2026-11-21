@@ -84,6 +84,17 @@ public final class ShipmentDtos {
 
     public record ResultPage(List<Entry> shipments, long total, int page, int pageSize) {}
 
+    public record SummaryFilters(@Positive Long regionId, @Positive Long productId,
+                                 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                 @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {}
+
+    public record MonthlySummary(String month, Long regionId, Long productId, long shipmentCount,
+                                 @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal quantity,
+                                 @JsonFormat(shape = JsonFormat.Shape.STRING) BigDecimal revenue) {}
+
+    public record SummaryPeriod(LocalDate from, LocalDate to, List<MonthlySummary> rows) {}
+    public record Summary(SummaryPeriod current, SummaryPeriod previous) {}
+
     public record RegionOption(Long id, String name) {
         static RegionOption from(Region region) { return new RegionOption(region.getId(), region.getName()); }
     }

@@ -30,6 +30,12 @@ public class ShipmentController {
         return shipments.options(actor);
     }
 
+    @GetMapping("/summary")
+    @PreAuthorize("hasRole('ANALYST')")
+    public Summary summary(@Valid @ModelAttribute SummaryFilters filters, @AuthenticationPrincipal AppPrincipal actor) {
+        return shipments.summary(filters, actor);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasRole('MANAGER')")

@@ -6,16 +6,16 @@ import { regionsByRegistrationCode } from '../features/regions/regionCodes'
 import { PageHeading } from './WorkspacePages'
 import { Loading } from '../components/Loading'
 function ResourceError({ message, retry }: { message:string; retry:()=>void }) { return <div className="alert alert-error" role="alert">{message}<button className="text-button" onClick={retry}>Повторить</button></div> }
-export function RegionsPage() {
+export function RegionsPage({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth()
   const { data, loading, error, refresh } = useResource<Region[]>('/regions')
   const regions = regionsByRegistrationCode(data ?? [])
 
   return <>
-    <PageHeading eyebrow="ПРОДАЖИ" title="Регионы"
+    {!embedded && <PageHeading eyebrow="ПРОДАЖИ" title="Регионы"
       subtitle={user?.role === 'MANAGER' ? 'Регионы, закреплённые за вами на текущую дату.' : 'Шесть областей и город Минск — география сбыта предприятия.'}>
       <span className="outline-badge"><MapPinned size={14}/>Республика Беларусь</span>
-    </PageHeading>
+    </PageHeading>}
 
     {loading ? <Loading/> : error ? <ResourceError message={error} retry={() => void refresh()}/> : regions.length ? (
       <>

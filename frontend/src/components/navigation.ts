@@ -23,4 +23,18 @@ export const pages: PageDefinition[] = [
   { path: '/reports', title: 'Отчётность', subtitle: 'Плановые и фактические результаты продаж', icon: FileChartColumnIncreasing, group: 'ПЛАНИРОВАНИЕ', roles: planDetailRoles },
   { path: '/administration', title: 'Пользователи', subtitle: 'Учётные записи и права доступа', icon: UsersRound, group: 'УПРАВЛЕНИЕ', roles: ['ADMIN'] },
   { path: '/profile', title: 'Мой профиль', subtitle: 'Данные вашей учётной записи', icon: UserRound, group: 'УЧЁТНАЯ ЗАПИСЬ', roles: all },
+  { path: '/directories', title: 'Справочники', subtitle: 'Продукция и регионы', icon: Package, group: '', roles: ['ANALYST'] },
 ]
+
+const analystMenu = [
+  ['/', 'Главная'], ['/purchasing-power', 'Задания на анализ'], ['/analytics', 'Аналитика сбыта'],
+  ['/shipments', 'Журнал отгрузок'], ['/statistics', 'Внешние данные'], ['/directories', 'Справочники'],
+]
+
+export function navigationFor(role: Role): PageDefinition[] {
+  if (role === 'ANALYST') return analystMenu.flatMap(([path, title]) => {
+    const page = pages.find(item => item.path === path)
+    return page ? [{ ...page, title, group: '' }] : []
+  })
+  return pages.filter(page => page.roles.includes(role))
+}

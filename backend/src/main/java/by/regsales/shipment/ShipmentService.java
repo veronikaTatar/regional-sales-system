@@ -2,6 +2,7 @@ package by.regsales.shipment;
 
 import by.regsales.catalog.RegionScopeService;
 import by.regsales.common.ApiException;
+import by.regsales.common.CalendarPeriod;
 import by.regsales.common.XlsxReader;
 import by.regsales.domain.AppUser;
 import by.regsales.domain.Product;
@@ -27,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -63,11 +65,7 @@ public class ShipmentService {
 
     public ResultPage list(Filters filters, AppPrincipal actor) {
         var user = account(actor);
-        if (!validDate(filters.from())) throw fieldError("from", "Укажите год от 1000 до 9999");
-        if (!validDate(filters.to())) throw fieldError("to", "Укажите год от 1000 до 9999");
-        if (filters.from() != null && filters.to() != null && filters.to().isBefore(filters.from())) {
-            throw fieldError("to", "Дата окончания должна быть не раньше даты начала");
-        }
+        validateDates(filters.from(), filters.to());
         if ((long) filters.page() * filters.size() > Integer.MAX_VALUE) {
             throw fieldError("page", "Номер страницы слишком большой");
         }
@@ -85,6 +83,39 @@ public class ShipmentService {
         }
         return new ResultPage(result.stream().map(Entry::from).toList(), result.getTotalElements(),
                 result.getTotalElements() == 0 ? 0 : result.getNumber(), filters.size());
+    }
+
+    public Summary summary(SummaryFilters filters, AppPrincipal actor) {
+        if (account(actor).getRole().getCode() != RoleCode.ANALYST) {
+            throw new AccessDeniedException("Сводка доступна региональному аналитику");
+        }
+        var from = filters.from();
+        var to = filters.to();
+        validateDates(from, to);
+        var current = summarize(filters, from, to);
+        if (from == null || to == null) return new Summary(current, null);
+
+        var previousEnd = from.minusDays(1);
+        var previousStart = CalendarPeriod.precedingStart(from, to);
+        return new Summary(current, validDate(previousStart) ? summarize(filters, previousStart, previousEnd) : null);
+    }
+
+    private SummaryPeriod summarize(SummaryFilters filters, LocalDate from, LocalDate to) {
+        var rows = shipments.summarize(filters.regionId(), filters.productId(),
+                        from == null ? LocalDate.of(1000, 1, 1) : from,
+                        to == null ? LocalDate.of(9999, 12, 31) : to).stream()
+                .map(row -> new MonthlySummary(YearMonth.of(row.getShipmentYear(), row.getShipmentMonth()).toString(),
+                        row.getRegionId(), row.getProductId(), row.getShipmentCount(), row.getQuantity(), row.getRevenue()))
+                .toList();
+        return new SummaryPeriod(from, to, rows);
+    }
+
+    private static void validateDates(LocalDate from, LocalDate to) {
+        if (!validDate(from)) throw fieldError("from", "Укажите год от 1000 до 9999");
+        if (!validDate(to)) throw fieldError("to", "Укажите год от 1000 до 9999");
+        if (from != null && to != null && to.isBefore(from)) {
+            throw fieldError("to", "Дата окончания должна быть не раньше даты начала");
+        }
     }
 
     @Transactional

@@ -31,6 +31,23 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long>, JpaSp
     List<ProductTotal> factByProduct(Long regionId, LocalDate from, LocalDate to);
 
     @Query("""
+            select year(s.shipmentDate) as shipmentYear, month(s.shipmentDate) as shipmentMonth,
+                s.region.id as regionId, s.product.id as productId, sum(s.quantity) as quantity,
+                sum(s.totalAmount) as revenue, count(s.id) as shipmentCount
+            from Shipment s
+            where (:regionId is null or s.region.id = :regionId) and (:productId is null or s.product.id = :productId)
+                and s.shipmentDate between :from and :to
+            group by year(s.shipmentDate), month(s.shipmentDate), s.region.id, s.product.id
+            """)
+    List<MonthlyTotal> summarize(Long regionId, Long productId, LocalDate from, LocalDate to);
+
+    interface MonthlyTotal extends ProductTotal {
+        int getShipmentYear();
+        int getShipmentMonth();
+        Long getRegionId();
+    }
+
+    @Query("""
             select plan.id as planId, sum(shipment.totalAmount) as revenue
             from RegionalPlan plan join Shipment shipment on shipment.region.id = plan.region.id
                 and shipment.shipmentDate between plan.periodStart and plan.periodEnd

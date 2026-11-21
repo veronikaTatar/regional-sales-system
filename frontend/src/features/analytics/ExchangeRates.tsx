@@ -57,6 +57,6 @@ export function ExchangeRates() {
           </tr>)}</tbody>
         </table>
       </div>
-    </> : <p className="analysis-method-note analysis-inline-note">На выбранную дату курсы не опубликованы.</p>)}
+    </> : <p className="analysis-method-note analysis-inline-note">На выбранную дату курсы USD, EUR, CNY и RUB недоступны.</p>)}
   </section>
 }
