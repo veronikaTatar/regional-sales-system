@@ -4,8 +4,6 @@ import { useAuth } from '../features/auth/AuthContext'
 import { PlanAttention } from '../features/plans/PlanAttention'
 import { navigationFor, planDetailRoles } from '../components/navigation'
 import type { PageDefinition } from '../components/navigation'
-import { recentPlans } from '../features/analytics/recentPlans'
-import { formatPeriod } from '../features/plans/planFormat'
 export function PageHeading({ eyebrow, title, subtitle, children }: { eyebrow?: string; title: string; subtitle: string; children?: React.ReactNode }) {
   return <div className="page-heading"><div>{eyebrow && <span className="eyebrow">{eyebrow}</span>}<h1>{title}</h1><p>{subtitle}</p></div>{children}</div>
 }
@@ -16,23 +14,6 @@ export function Dashboard() {
   const name = nameParts.slice(1, 3).join(' ') || nameParts[0]
   const roleDescriptions = { ADMIN: 'Управляйте учётными записями, назначайте роли и контролируйте доступ сотрудников.', MANAGER: 'Ваши регионы, продукция и продажи — в едином рабочем пространстве.', ANALYST: 'Превращайте региональную статистику в основу обоснованных решений.', SALES_HEAD: 'Планируйте региональные продажи и контролируйте результаты команды.' }
   const available = navigationFor(user.role).filter(page => !['/','/profile'].includes(page.path))
-  if (user.role === 'ANALYST') {
-    const recent = recentPlans(user.id)
-    return <>
-      <PageHeading title={`Здравствуйте, ${name}`} subtitle="Задания и данные регионального аналитика."/>
-      <PlanAttention/>
-      {recent.length > 0 && <section className="panel plan-attention analysis-section" aria-label="Недавно открытые планы">
-        <div className="plan-section-top"><h2>Недавно открытые планы</h2></div>
-        <ul>{recent.map(plan => <li key={plan.id}><Link to={'/plans/' + plan.id}>
-          <span><strong>{plan.regionName}</strong><small>{formatPeriod(plan.periodStart, plan.periodEnd)}</small></span>
-          <ArrowRight size={16} aria-hidden="true"/>
-        </Link></li>)}</ul>
-      </section>}
-      <div className="quick-links analysis-section">{available.map(page => <Link key={page.path} to={page.path} className="quick-link">
-        <page.icon size={20} aria-hidden="true"/><span>{page.title}</span><ArrowRight size={16} aria-hidden="true"/>
-      </Link>)}</div>
-    </>
-  }
   return <>
     <PageHeading eyebrow="ОБЗОР СИСТЕМЫ" title={`Здравствуйте, ${name}`} subtitle="Добро пожаловать в систему управления региональным сбытом."><span className="status-badge"><span className="live-dot"/>Учётная запись активна</span></PageHeading>
     {planDetailRoles.includes(user.role) && <PlanAttention/>}

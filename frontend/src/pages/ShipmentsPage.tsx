@@ -125,7 +125,7 @@ export function ShipmentsPage() {
   }
 
   return <>
-    <PageHeading eyebrow={user?.role === 'ANALYST' ? undefined : 'ПРОДАЖИ'} title={user?.role === 'ANALYST' ? 'Журнал отгрузок' : 'Отгрузки'} subtitle="Фактические отгрузки по регионам. Цены и суммы указаны в BYN без НДС.">
+    <PageHeading eyebrow="ПРОДАЖИ" title="Отгрузки" subtitle="Фактические отгрузки по регионам. Цены и суммы указаны в BYN без НДС.">
       {writable && (
         <div className="product-page-actions">
           <button className="button button-secondary" type="button" onClick={() => openDialog('import')}>

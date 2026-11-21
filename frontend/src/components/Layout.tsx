@@ -26,7 +26,7 @@ export function Layout() {
     {open && <button className="sidebar-overlay" aria-label="Закрыть навигацию" onClick={()=>setOpen(false)}/>}
     <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
       <div className="sidebar-brand"><Link to="/" onClick={()=>setOpen(false)} aria-label="Регион — главная"><Brand inverse/></Link><button className="icon-button sidebar-close" onClick={()=>setOpen(false)} aria-label="Закрыть меню"><X size={20}/></button></div>
-      <nav aria-label="Основная навигация">{groups.map(group=><div className="nav-group" key={group}>{group && <span className="nav-label">{group}</span>}{visible.filter(item=>item.group===group).map(item=><NavLink end={item.path==='/'} key={item.path} to={item.path} onClick={()=>setOpen(false)} className={({isActive})=>`nav-link ${isActive ? 'active' : ''}`}><item.icon size={18}/><span>{item.title}</span></NavLink>)}</div>)}</nav>
+      <nav aria-label="Основная навигация">{groups.map(group=><div className="nav-group" key={group}><span className="nav-label">{group}</span>{visible.filter(item=>item.group===group).map(item=><NavLink end={item.path==='/'} key={item.path} to={item.path} onClick={()=>setOpen(false)} className={({isActive})=>`nav-link ${isActive ? 'active' : ''}`}><item.icon size={18}/><span>{item.title}</span></NavLink>)}</div>)}</nav>
       <div className="sidebar-bottom"><div className="sidebar-security"><ShieldCheck size={17}/><span>Доступ защищён</span><span className="live-dot"/></div><button className="logout-button" onClick={()=>void signOut()} disabled={busy}><LogOut size={17}/>{busy ? 'Выходим…' : 'Выйти из системы'}</button></div>
     </aside>
     <div className="workspace-main">

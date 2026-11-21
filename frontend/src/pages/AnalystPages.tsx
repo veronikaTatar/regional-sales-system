@@ -1,4 +1,4 @@
-import { Navigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { WorkspaceTabs } from '../components/WorkspaceTabs'
 import { ShipmentAnalysis } from '../features/analytics/ShipmentAnalysis'
 import { AnalyticsPage } from './AnalyticsPage'
@@ -27,7 +27,9 @@ export function SalesAnalysisPage() {
   if (legacyPlan && /^\d+$/.test(legacyPlan)) return <Navigate to={'/plans/' + legacyPlan + '?tab=analysis'} replace/>
   const report = params.get('tab') === 'plan-fact'
   return <>
-    <PageHeading title="Аналитика сбыта" subtitle="Динамика отгрузок предприятия и выполнение утверждённых планов."/>
+    <PageHeading title="Аналитика сбыта" subtitle="Динамика отгрузок предприятия и выполнение утверждённых планов.">
+      <Link to="/purchasing-power" className="button button-secondary">Задания на анализ</Link>
+    </PageHeading>
     <WorkspaceTabs label="Аналитика сбыта" active={report ? 'plan-fact' : 'shipments'} items={[
       { id: 'shipments', title: 'Анализ отгрузок', to: '/analytics' },
       { id: 'plan-fact', title: 'План и факт', to: '/analytics?tab=plan-fact' },

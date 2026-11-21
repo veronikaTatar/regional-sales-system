@@ -15,7 +15,7 @@ export const pages: PageDefinition[] = [
   { path: '/regions', title: 'Регионы', subtitle: 'География регионального сбыта', icon: MapPinned, group: 'ПРОДАЖИ', roles: all },
   { path: '/shipments', title: 'Отгрузки', subtitle: 'Учёт фактических продаж по регионам', icon: Truck, group: 'ПРОДАЖИ', roles: ['MANAGER','ANALYST','SALES_HEAD'], capabilities: ['Регистрация отгрузок продукции','Фильтры по региону, периоду и товару','Контроль продаж в закреплённых регионах'] },
   { path: '/statistics', title: 'Статистика', subtitle: 'Региональные социально-экономические показатели', icon: Database, group: 'АНАЛИТИКА', roles: ['ANALYST'] },
-  { path: '/purchasing-power', title: 'Покупательная способность', subtitle: 'Задания на расчёт индекса и подготовку рекомендаций', icon: Calculator, group: 'АНАЛИТИКА', roles: ['ANALYST'] },
+  { path: '/purchasing-power', title: 'Задания на анализ', subtitle: 'Задания на расчёт индекса и подготовку рекомендаций', icon: Calculator, group: 'ПЛАНИРОВАНИЕ', roles: ['ANALYST'] },
   { path: '/analytics', title: 'Аналитика', subtitle: 'Сравнение показателей региональных рынков', icon: ChartNoAxesCombined, group: 'АНАЛИТИКА', roles: ['ANALYST','SALES_HEAD'] },
   { path: '/recommendations', title: 'Рекомендации', subtitle: 'Аналитическое обоснование сбытовых решений', icon: Lightbulb, group: 'АНАЛИТИКА', roles: ['ANALYST','SALES_HEAD'] },
   { path: '/plans', title: 'Региональные планы', subtitle: 'Планирование региональных продаж', icon: ClipboardList, group: 'ПЛАНИРОВАНИЕ', roles: planRoles },
@@ -27,14 +27,18 @@ export const pages: PageDefinition[] = [
 ]
 
 const analystMenu = [
-  ['/', 'Главная'], ['/purchasing-power', 'Задания на анализ'], ['/analytics', 'Аналитика сбыта'],
-  ['/shipments', 'Журнал отгрузок'], ['/statistics', 'Внешние данные'], ['/directories', 'Справочники'],
+  { path: '/' },
+  { path: '/shipments' },
+  { path: '/regions' },
+  { path: '/analytics', title: 'Аналитика сбыта', group: 'ПЛАНИРОВАНИЕ' },
+  { path: '/statistics', title: 'Внешние данные', group: 'ПЛАНИРОВАНИЕ' },
+  { path: '/profile' },
 ]
 
 export function navigationFor(role: Role): PageDefinition[] {
-  if (role === 'ANALYST') return analystMenu.flatMap(([path, title]) => {
-    const page = pages.find(item => item.path === path)
-    return page ? [{ ...page, title, group: '' }] : []
+  if (role === 'ANALYST') return analystMenu.flatMap(entry => {
+    const page = pages.find(item => item.path === entry.path && item.roles.includes(role))
+    return page ? [{ ...page, ...entry }] : []
   })
   return pages.filter(page => page.roles.includes(role))
 }

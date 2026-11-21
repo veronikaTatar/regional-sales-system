@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ArrowLeft, Check, Pencil, Send, Undo2 } from 'lucide-react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
@@ -7,7 +7,6 @@ import { WorkspaceTabs } from '../components/WorkspaceTabs'
 import { PlanRecommendation } from '../features/analytics/AnalysisResults'
 import { PlanAnalysisForm } from '../features/analytics/PlanAnalysisForm'
 import { PlanRegionIndicators } from '../features/analytics/PlanRegionIndicators'
-import { rememberPlan } from '../features/analytics/recentPlans'
 import { ShipmentAnalysis } from '../features/analytics/ShipmentAnalysis'
 import { useAuth } from '../features/auth/AuthContext'
 import { PlanEditor } from '../features/plans/PlanEditor'
@@ -32,11 +31,6 @@ export function PlanDetailPage() {
   const [pendingAction, setPendingAction] = useState<'sales' | 'withdraw' | null>(null)
   const [actionError, setActionError] = useState('')
   const analyst = user?.role === 'ANALYST'
-  const userId = user?.id
-  const openedPlan = detail?.plan
-  useEffect(() => {
-    if (analyst && userId !== undefined && openedPlan?.id === Number(id)) rememberPlan(userId, openedPlan)
-  }, [analyst, id, openedPlan, userId])
   const back = <Link to={analyst ? '/purchasing-power' : '/plans'} className="button button-secondary">
     <ArrowLeft size={16} aria-hidden="true"/>{analyst ? 'К заданиям' : 'К планам'}</Link>
 
