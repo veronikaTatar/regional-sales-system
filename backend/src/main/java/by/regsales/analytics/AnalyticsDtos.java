@@ -29,9 +29,17 @@ public final class AnalyticsDtos {
 
     public record SalaryMonth(String period, String sourceUrl, List<RegionalSalary> regions) {}
 
-    public record SalaryDownloadIssue(String period, String message) {}
+    public record RegionalTurnover(String regionCode, String regionName, BigDecimal cumulativeTurnover, BigDecimal monthlyTurnover) {}
 
-    public record SalaryDownloadResult(int year, int months, List<SalaryDownloadIssue> issues) {}
+    public record TurnoverMonth(String period, String sourceUrl, List<RegionalTurnover> regions) {}
+
+    public record RegionalCpi(String regionCode, String regionName, BigDecimal indexPercent, BigDecimal changePercent) {}
+
+    public record CpiMonth(String period, String sourceUrl, List<RegionalCpi> regions) {}
+
+    public record MonthlyDownloadIssue(String period, String message) {}
+
+    public record MonthlyDownloadResult(int year, int months, List<MonthlyDownloadIssue> issues) {}
 
     public record Weights(
             @NotNull @DecimalMin("0") @DecimalMax("100") @Digits(integer = 3, fraction = 2) BigDecimal salary,

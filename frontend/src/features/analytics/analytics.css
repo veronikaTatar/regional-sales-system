@@ -2,6 +2,44 @@
   margin-block: 16px;
 }
 
+.statistics-navigation {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.statistics-navigation a {
+  padding: 8px 12px;
+  border-radius: 5px;
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.statistics-navigation a:hover,
+.statistics-navigation a:focus-visible {
+  background: #eef8f4;
+}
+
+.statistics-section {
+  scroll-margin-top: 96px;
+}
+
+.statistics-section:target {
+  border-color: #91b9aa;
+}
+
+.statistics-year {
+  width: min(100%, 190px);
+}
+
 .mini-status.analysis-source-label {
   color: #735123;
   background: #fcf1da;

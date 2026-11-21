@@ -3,8 +3,10 @@ package by.regsales.analytics;
 import by.regsales.common.ApiException;
 import by.regsales.domain.AppUser;
 import by.regsales.domain.ImportStatus;
+import by.regsales.domain.Region;
 import by.regsales.domain.RegionalStatistic;
 import by.regsales.domain.RoleCode;
+import by.regsales.domain.StatisticalIndicator;
 import by.regsales.domain.StatisticsImport;
 import by.regsales.repository.AppUserRepository;
 import by.regsales.repository.RegionRepository;
@@ -22,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.URI;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.ZoneId;
@@ -31,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static by.regsales.analytics.AnalyticsDtos.*;
 
@@ -44,6 +48,9 @@ public class BelstatStatistics {
     private static final String TURNOVER = "ANNUAL_RETAIL_TURNOVER";
     private static final String POPULATION = "POPULATION";
     private static final String MONTHLY_SALARY = "AVERAGE_SALARY";
+    private static final String TURNOVER_YTD = "RETAIL_TURNOVER_YTD";
+    private static final String NON_FOOD_CPI = "NON_FOOD_CPI_MOM";
+    private static final BigDecimal CPI_BASE = BigDecimal.valueOf(100);
     private static final Set<String> CODES = Set.of(SALARY, TURNOVER, POPULATION);
 
     private final RegionalStatisticRepository statistics;
@@ -71,13 +78,15 @@ public class BelstatStatistics {
     }
 
     public List<SalaryMonth> monthlySalaries() {
+        return monthlyReleases(MONTHLY_SALARY).map(entry -> salaryMonth(entry.getKey(), entry.getValue())).toList();
+    }
+
+    private Stream<Map.Entry<YearMonth, List<RegionalStatistic>>> monthlyReleases(String code) {
         return statistics.findByIndicatorCodeInAndPeriodEndLessThanEqualAndStatisticsImportSourceNameOrderByPeriodEndDesc(
-                        Set.of(MONTHLY_SALARY), LocalDate.now(MINSK), SOURCE_NAME).stream()
+                        Set.of(code), LocalDate.now(MINSK), SOURCE_NAME).stream()
                 .collect(Collectors.groupingBy(row -> YearMonth.from(row.getPeriodStart())))
                 .entrySet().stream()
-                .sorted(Map.Entry.<YearMonth, List<RegionalStatistic>>comparingByKey().reversed())
-                .map(entry -> salaryMonth(entry.getKey(), entry.getValue()))
-                .toList();
+                .sorted(Map.Entry.<YearMonth, List<RegionalStatistic>>comparingByKey().reversed());
     }
 
     private static SalaryMonth salaryMonth(YearMonth period, List<RegionalStatistic> values) {
@@ -88,7 +97,7 @@ public class BelstatStatistics {
     }
 
     @Transactional
-    public SalaryDownloadResult saveMonthlySalaries(BelstatSalaryClient.Download download, AppPrincipal actor) {
+    public MonthlyDownloadResult saveMonthlySalaries(BelstatSalaryClient.Download download, AppPrincipal actor) {
         if (download.releases().isEmpty()) {
             var first = download.failures().getFirst();
             throw new ApiException(HttpStatus.BAD_GATEWAY, "BELSTAT_SALARY_DOWNLOAD",
@@ -97,33 +106,118 @@ public class BelstatStatistics {
         var analyst = analystForUpdate(actor);
         var indicator = indicators.findByCode(MONTHLY_SALARY)
                 .orElseThrow(() -> new IllegalStateException("Показатель средней зарплаты отсутствует в справочнике"));
-        var regionByCode = regions.findAll().stream().collect(Collectors.toMap(region -> region.getCode(), region -> region));
+        var regionByCode = belstatRegions();
+        for (var release : download.releases()) {
+            saveRegionalRelease(analyst, indicator, regionByCode, release.source(), release.period().atDay(1),
+                    release.period().atEndOfMonth(), release.salaries());
+        }
+        var issues = download.failures().stream()
+                .map(failure -> new MonthlyDownloadIssue(failure.period().toString(), failure.message())).toList();
+        return new MonthlyDownloadResult(download.year(), download.releases().size(), issues);
+    }
+
+    public List<TurnoverMonth> turnoverMonths() {
+        var byMonth = statistics.findByIndicatorCodeInAndPeriodEndLessThanEqualAndStatisticsImportSourceNameOrderByPeriodEndDesc(
+                        Set.of(TURNOVER_YTD), LocalDate.now(MINSK), SOURCE_NAME).stream()
+                .filter(row -> row.getPeriodStart().equals(start(row.getPeriodEnd().getYear()))
+                        && row.getPeriodEnd().equals(YearMonth.from(row.getPeriodEnd()).atEndOfMonth()))
+                .collect(Collectors.groupingBy(row -> YearMonth.from(row.getPeriodEnd()),
+                        Collectors.toMap(row -> row.getRegion().getCode(), row -> row)));
+        return byMonth.keySet().stream().sorted(Comparator.reverseOrder())
+                .filter(period -> byMonth.get(period).keySet().equals(BelstatWorkbook.regionCodes()))
+                .map(period -> turnoverMonth(period, byMonth.get(period), byMonth.getOrDefault(period.minusMonths(1), Map.of())))
+                .toList();
+    }
+
+    private static TurnoverMonth turnoverMonth(YearMonth period, Map<String, RegionalStatistic> values,
+                                               Map<String, RegionalStatistic> previous) {
+        var rows = values.entrySet().stream().map(entry -> {
+            var row = entry.getValue();
+            var earlier = previous.get(entry.getKey());
+            var total = row.getValue();
+            BigDecimal monthly = null;
+            if (period.getMonthValue() == 1) monthly = total;
+            else if (earlier != null && total.compareTo(earlier.getValue()) >= 0) monthly = total.subtract(earlier.getValue());
+            return new RegionalTurnover(entry.getKey(), row.getRegion().getName(), total, monthly);
+        }).sorted(Comparator.comparing(RegionalTurnover::regionName)).toList();
+        return new TurnoverMonth(period.toString(), values.values().iterator().next().getSourceUrl(), rows);
+    }
+
+    @Transactional
+    public MonthlyDownloadResult saveTurnover(BelstatTurnoverClient.Download download, AppPrincipal actor) {
+        if (download.releases().isEmpty()) {
+            var first = download.failures().getFirst();
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "BELSTAT_TURNOVER_DOWNLOAD",
+                    "Не удалось загрузить товарооборот за " + download.year() + " год. " + first.period() + " · " + first.message());
+        }
+        var analyst = analystForUpdate(actor);
+        var indicator = indicators.findByCode(TURNOVER_YTD)
+                .orElseThrow(() -> new IllegalStateException("Показатель розничного товарооборота отсутствует в справочнике"));
+        var regionByCode = belstatRegions();
+        for (var release : download.releases()) {
+            saveRegionalRelease(analyst, indicator, regionByCode, release.source(), start(release.period().getYear()),
+                    release.period().atEndOfMonth(), release.totals());
+        }
+        var issues = download.failures().stream()
+                .map(failure -> new MonthlyDownloadIssue(failure.period().toString(), failure.message())).toList();
+        return new MonthlyDownloadResult(download.year(), download.releases().size(), issues);
+    }
+
+    public List<CpiMonth> nonFoodCpiMonths() {
+        return monthlyReleases(NON_FOOD_CPI).map(entry -> {
+            var values = entry.getValue();
+            var regionalIndices = values.stream()
+                    .map(row -> new RegionalCpi(row.getRegion().getCode(), row.getRegion().getName(), row.getValue(),
+                            row.getValue().subtract(CPI_BASE)))
+                    .sorted(Comparator.comparing(RegionalCpi::regionName)).toList();
+            return new CpiMonth(entry.getKey().toString(), values.getFirst().getSourceUrl(), regionalIndices);
+        }).toList();
+    }
+
+    @Transactional
+    public MonthlyDownloadResult saveNonFoodCpi(BelstatCpiClient.Download download, AppPrincipal actor) {
+        if (download.releases().isEmpty()) {
+            var first = download.issues().getFirst();
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "BELSTAT_CPI_DOWNLOAD",
+                    "Не удалось загрузить ИПЦ за " + download.year() + " год. " + first.period() + " · " + first.message());
+        }
+        var analyst = analystForUpdate(actor);
+        var indicator = indicators.findByCode(NON_FOOD_CPI)
+                .orElseThrow(() -> new IllegalStateException("Показатель ИПЦ на непродовольственные товары отсутствует в справочнике"));
+        var regionByCode = belstatRegions();
+        for (var release : download.releases()) {
+            saveRegionalRelease(analyst, indicator, regionByCode, release.source(), release.period().atDay(1),
+                    release.period().atEndOfMonth(), release.indices());
+        }
+        return new MonthlyDownloadResult(download.year(), download.releases().size(), download.issues());
+    }
+
+    private Map<String, Region> belstatRegions() {
+        var regionByCode = regions.findAll().stream().collect(Collectors.toMap(Region::getCode, region -> region));
         if (!regionByCode.keySet().containsAll(BelstatWorkbook.regionCodes())) {
             throw new ApiException(HttpStatus.CONFLICT, "BELSTAT_REFERENCE_DATA", "В справочнике отсутствуют регионы Белстата");
         }
-        for (var release : download.releases()) {
-            var start = release.period().atDay(1);
-            var end = release.period().atEndOfMonth();
-            var previous = statistics.findByIndicatorCodeInAndPeriodStartAndPeriodEnd(Set.of(MONTHLY_SALARY), start, end).stream()
-                    .collect(Collectors.toMap(row -> row.getRegion().getCode(), row -> row));
-            String path = release.source().getPath();
-            var record = importRecord(analyst, path.substring(path.lastIndexOf('/') + 1), release.salaries().size());
-            imports.save(record);
-            release.salaries().forEach((code, value) -> {
-                var row = previous.getOrDefault(code, new RegionalStatistic());
-                row.setRegion(regionByCode.get(code));
-                row.setIndicator(indicator);
-                row.setPeriodStart(start);
-                row.setPeriodEnd(end);
-                row.setValue(databaseValue(value));
-                row.setStatisticsImport(record);
-                row.setSourceUrl(release.source().toString());
-                statistics.save(row);
-            });
-        }
-        var issues = download.failures().stream()
-                .map(failure -> new SalaryDownloadIssue(failure.period().toString(), failure.message())).toList();
-        return new SalaryDownloadResult(download.year(), download.releases().size(), issues);
+        return regionByCode;
+    }
+
+    private void saveRegionalRelease(AppUser analyst, StatisticalIndicator indicator, Map<String, Region> regionByCode,
+                                     URI source, LocalDate start, LocalDate end, Map<String, BigDecimal> values) {
+        var previous = statistics.findByIndicatorCodeInAndPeriodStartAndPeriodEnd(Set.of(indicator.getCode()), start, end).stream()
+                .collect(Collectors.toMap(row -> row.getRegion().getCode(), row -> row));
+        String path = source.getPath();
+        var record = importRecord(analyst, path.substring(path.lastIndexOf('/') + 1), values.size());
+        imports.save(record);
+        values.forEach((code, value) -> {
+            var row = previous.getOrDefault(code, new RegionalStatistic());
+            row.setRegion(regionByCode.get(code));
+            row.setIndicator(indicator);
+            row.setPeriodStart(start);
+            row.setPeriodEnd(end);
+            row.setValue(databaseValue(value));
+            row.setStatisticsImport(record);
+            row.setSourceUrl(source.toString());
+            statistics.save(row);
+        });
     }
 
     @Transactional

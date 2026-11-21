@@ -62,7 +62,7 @@ final class BelstatSalaryWorkbook {
             var header = sheet.getRow(index);
             if (header == null) continue;
             for (var cell : header) {
-                var label = BelstatSalaryClient.normalized(format.formatCellValue(cell));
+                var label = BelstatWebsite.normalized(format.formatCellValue(cell));
                 if (!label.contains("номинальная начисленная") || !label.contains("заработная плата")
                         || (!label.contains("рублей") && !label.contains("byn"))) continue;
                 int first = cell.getColumnIndex();
@@ -91,7 +91,7 @@ final class BelstatSalaryWorkbook {
                         .findFirst().orElse(null);
             }
             if (cell == null) continue;
-            var label = BelstatSalaryClient.normalized(format.formatCellValue(cell)).split("/", 2)[0].strip();
+            var label = BelstatWebsite.normalized(format.formatCellValue(cell)).split("/", 2)[0].strip();
             monthFound |= label.equals(month) || label.matches(month + " " + period.getYear() + "( г\\.?)?");
             yearFound |= Integer.valueOf(period.getYear()).equals(BelstatWorkbook.year(cell, format))
                     || label.matches(month + " " + period.getYear() + "( г\\.?)?");

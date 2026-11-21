@@ -77,7 +77,29 @@ export interface SalaryMonth {
   regions: { regionCode: string; regionName: string; averageSalary: number }[]
 }
 
-export interface SalaryDownloadResult {
+export interface TurnoverMonth {
+  period: string
+  sourceUrl: string | null
+  regions: {
+    regionCode: string
+    regionName: string
+    cumulativeTurnover: number
+    monthlyTurnover: number | null
+  }[]
+}
+
+export interface CpiMonth {
+  period: string
+  sourceUrl: string | null
+  regions: {
+    regionCode: string
+    regionName: string
+    indexPercent: number
+    changePercent: number
+  }[]
+}
+
+export interface MonthlyDownloadResult {
   year: number
   months: number
   issues: { period: string; message: string }[]

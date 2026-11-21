@@ -29,6 +29,8 @@ public class AnalyticsController {
     private final AnalyticsService analytics;
     private final BelstatStatistics belstat;
     private final BelstatSalaryClient salaryClient;
+    private final BelstatTurnoverClient turnoverClient;
+    private final BelstatCpiClient cpiClient;
 
     @GetMapping("/statistics")
     @PreAuthorize("hasRole('ANALYST')")
@@ -51,8 +53,32 @@ public class AnalyticsController {
 
     @PostMapping("/statistics/salaries/sync")
     @PreAuthorize("hasRole('ANALYST')")
-    public SalaryDownloadResult syncSalaries(@RequestParam(required = false) Integer year, @AuthenticationPrincipal AppPrincipal actor) {
+    public MonthlyDownloadResult syncSalaries(@RequestParam(required = false) Integer year, @AuthenticationPrincipal AppPrincipal actor) {
         return belstat.saveMonthlySalaries(salaryClient.downloadYear(year), actor);
+    }
+
+    @GetMapping("/statistics/turnover")
+    @PreAuthorize("hasRole('ANALYST')")
+    public List<TurnoverMonth> turnover() {
+        return belstat.turnoverMonths();
+    }
+
+    @PostMapping("/statistics/turnover/sync")
+    @PreAuthorize("hasRole('ANALYST')")
+    public MonthlyDownloadResult syncTurnover(@RequestParam(required = false) Integer year, @AuthenticationPrincipal AppPrincipal actor) {
+        return belstat.saveTurnover(turnoverClient.downloadYear(year), actor);
+    }
+
+    @GetMapping("/statistics/non-food-cpi")
+    @PreAuthorize("hasRole('ANALYST')")
+    public List<CpiMonth> nonFoodCpi() {
+        return belstat.nonFoodCpiMonths();
+    }
+
+    @PostMapping("/statistics/non-food-cpi/sync")
+    @PreAuthorize("hasRole('ANALYST')")
+    public MonthlyDownloadResult syncNonFoodCpi(@RequestParam(required = false) Integer year, @AuthenticationPrincipal AppPrincipal actor) {
+        return belstat.saveNonFoodCpi(cpiClient.downloadYear(year), actor);
     }
 
     @PostMapping(value = "/statistics/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
