@@ -5,6 +5,7 @@ import { AnalysisSource, indicatorFormat } from '../features/analytics/AnalysisR
 import { BelstatSalaries } from '../features/analytics/BelstatSalaries'
 import { BelstatTurnover } from '../features/analytics/BelstatTurnover'
 import { BelstatCpi } from '../features/analytics/BelstatCpi'
+import { ExchangeRates } from '../features/analytics/ExchangeRates'
 import { BelstatImportDialog } from '../features/analytics/BelstatImportDialog'
 import type { Statistics } from '../features/analytics/types'
 import { formatPeriod } from '../features/plans/planFormat'
@@ -17,16 +18,18 @@ export function StatisticsPage() {
   const [notice, setNotice] = useState('')
 
   return <>
-    <PageHeading eyebrow="АНАЛИТИКА" title="Статистика" subtitle="Показатели Белстата по шести областям и г. Минску."/>
+    <PageHeading eyebrow="АНАЛИТИКА" title="Статистика" subtitle="Региональные показатели Белстата и официальные курсы валют Нацбанка."/>
     <nav className="statistics-navigation" aria-label="Разделы статистики">
       <a href="#belstat-salaries">Средняя зарплата</a>
       <a href="#belstat-turnover">Розничный товарооборот</a>
       <a href="#belstat-cpi">ИПЦ</a>
+      <a href="#nbrb-rates">Курсы валют</a>
       <a href="#belstat-annual">Годовые показатели</a>
     </nav>
     <BelstatSalaries/>
     <BelstatTurnover/>
     <BelstatCpi/>
+    <ExchangeRates/>
     <section id="belstat-annual" tabIndex={-1} className="panel catalog-panel analysis-section statistics-section" aria-labelledby="belstat-annual-heading">
       <div className="plan-section-top">
         <h2 id="belstat-annual-heading">Годовые показатели</h2>

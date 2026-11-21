@@ -31,6 +31,7 @@ public class AnalyticsController {
     private final BelstatSalaryClient salaryClient;
     private final BelstatTurnoverClient turnoverClient;
     private final BelstatCpiClient cpiClient;
+    private final NbrbExchangeRates exchangeRates;
 
     @GetMapping("/statistics")
     @PreAuthorize("hasRole('ANALYST')")
@@ -73,6 +74,12 @@ public class AnalyticsController {
     @PreAuthorize("hasRole('ANALYST')")
     public List<CpiMonth> nonFoodCpi() {
         return belstat.nonFoodCpiMonths();
+    }
+
+    @GetMapping("/statistics/exchange-rates")
+    @PreAuthorize("hasRole('ANALYST')")
+    public NbrbExchangeRates.DailyRates exchangeRates(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return exchangeRates.onDate(date);
     }
 
     @PostMapping("/statistics/non-food-cpi/sync")
